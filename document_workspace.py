@@ -141,6 +141,7 @@ def mutate(path,data):
             if job and job[0]=="running":raise ValueError("Индексация уже выполняется")
             enqueue(db,ident)
             db.execute("UPDATE documents SET extract_status='queued' WHERE id=?",(ident,))
+        elif action=="version":
             parent=data.get("parent")
             p=doc.get(db,parent)
             if parent==ident:raise ValueError("Выберите другой документ")
@@ -175,7 +176,7 @@ def excerpts(path,query,ident=None):
         return {"sources":result[:8]}
 def analytics(path):
     with closing(doc.connect(path)) as db:
-        stats=dict(db.execute("""SELECT COUNT(*) count,COALESCE(SUM(size),0) bytes,SUM(extract_status='indexed') indexed,SUM(extract_status='preview_only') preview_only FROM documents WHERE deleted IS NULL""").fetchone())
+        stats=dict(db.execute("""SELECT COUNT(*) count,COALESCE(SUM(size),0) bytes,COALESCE(SUM(extract_status='indexed'),0) AS "indexed",COALESCE(SUM(extract_status='preview_only'),0) AS preview_only FROM documents WHERE deleted IS NULL""").fetchone())
         formats=Counter();volumes=Counter()
         for row in db.execute("SELECT name,size FROM documents WHERE deleted IS NULL"):
             ext=row[0].rsplit(".",1)[-1].lower();formats[ext]+=1;volumes[ext]+=row[1]
