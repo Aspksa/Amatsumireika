@@ -285,3 +285,24 @@ main:not(.expanded) #left{justify-content:flex-start;align-items:stretch;padding
 @keyframes chronoMonthReveal{from{opacity:.24}to{opacity:1}}
 #left[data-cinema="off"] #year-wheel,#left[data-cinema="off"] #time-overlay,#left[data-cinema="off"] #month-grid{animation:none}
 @media(prefers-reduced-motion:reduce){#left.chrono-month-transition #year-wheel,#left.chrono-month-transition #time-overlay,#left.chrono-month-transition #month-grid{animation:none}}
+
+/* Clock-only center and federal production calendar, gold rest days. */
+.chrono-clock{width:44%}
+.chrono-clock #clock{font-size:clamp(15px,9.1cqw,38px);letter-spacing:-.07em}
+#calendar-date-label{text-align:center;text-transform:capitalize;color:var(--muted);font:500 12px/1.4 var(--sans);margin:5px 0}
+#month-expand{display:block;margin:3px auto;background:transparent;border:0;color:var(--muted);padding:4px 8px;font-size:11px}
+#left .month-day.kind-weekend,#left .month-day.kind-transfer{color:#e4b85e;background:#d5a54e13;font-weight:700}
+#left .month-day.kind-holiday{color:#ffe6a1;background:#d5a54e29;border-color:#b98b3a;font-weight:750}
+#left .month-day.kind-short{box-shadow:inset 0 -2px 0 #b98b3a}
+#left .month-day.is-today{border-color:#f9eccd;outline:1px solid #f9eccd;outline-offset:-2px}
+#left .month-day.is-selected{background:#ffd17a;color:#21180b;border-color:#ffd17a}
+.month-footer{display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap;font:10px var(--sans);margin-top:5px}
+.month-rest-key{color:#e4b85e}.month-holiday-key{color:#ffe6a1;font-weight:700}
+.month-footer #month-today{margin:0}
+#month-rule-notice{color:var(--muted);font:11px/1.4 var(--sans);text-align:center}
+#month-rule-notice:empty{display:none}
+:root.paper #left .month-day.kind-weekend,:root.paper #left .month-day.kind-transfer{color:#80550f;background:#b78b2320}
+:root.paper #left .month-day.kind-holiday{color:#704605;background:#b78b2335;border-color:#9a6a17}
+:root.paper #left .month-day.is-today{border-color:#80550f;outline-color:#80550f}
+:root.paper #left .month-day.is-selected{background:#80550f;color:#fff6e5;border-color:#80550f}
+:root.paper .month-rest-key,:root.paper .month-holiday-key{color:#80550f}

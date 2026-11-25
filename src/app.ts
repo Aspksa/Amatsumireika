@@ -521,18 +521,26 @@ function moveMonth(offset:number,now=new Date()){
  const day=Math.min(month.getDate(),new Date(d.getFullYear(),d.getMonth()+1,0,12).getDate());
  d.setDate(day);selectMonthDate(d,now);
 }
+// Unknown future years: show normal weekend pattern, never invent official transfers.
+function monthDayKind(d:Date):DayType{
+ return productionDay(d)??(officialHolidays.has(dayKey(d).slice(5))?"holiday":d.getDay()===0||d.getDay()===6?"weekend":"work");
+}
 function renderMonthGrid(current:Date,now:Date){
  const y=current.getFullYear(),m=current.getMonth(),selected=dayKey(current),today=dayKey(now),root=$("month-grid");
  text($("month-heading"),current.toLocaleDateString("ru-RU",{month:"long",year:"numeric"}));
+ text($("calendar-date-label"),current.toLocaleDateString("ru-RU",{weekday:"long",day:"numeric",month:"long"}));
+ text($("month-rule-notice"),productionRules[y]?"":"Переносы на этот год не загружены; показаны обычные выходные и фиксированные праздники.");
  $<HTMLButtonElement>("month-prev").disabled=y===2026&&m===0;
  $<HTMLButtonElement>("month-next").disabled=y===2100&&m===11;
  root.replaceChildren();
  for(const d of monthCells(y,m)){
   if(!d){const blank=document.createElement("span");blank.className="month-blank";blank.setAttribute("aria-hidden","true");root.append(blank);continue}
   const k=dayKey(d),b=document.createElement("button");b.type="button";b.className="month-day";
+  const kind=monthDayKind(d);b.classList.add("kind-"+kind);b.setAttribute("data-date",k);
   if(k===today){b.classList.add("is-today");b.setAttribute("aria-current","date")}
   if(k===selected)b.classList.add("is-selected");
-  b.setAttribute("aria-pressed",String(k===selected));b.setAttribute("aria-label",d.toLocaleDateString("ru-RU",{weekday:"long",day:"numeric",month:"long",year:"numeric"}));
+  b.setAttribute("aria-pressed",String(k===selected));const kindLabel=productionRules[y]?dayNames[kind]:kind==="holiday"?"Фиксированный праздник":kind==="weekend"?"Обычный выходной":"Предварительно рабочий день";
+  const label=d.toLocaleDateString("ru-RU",{weekday:"long",day:"numeric",month:"long",year:"numeric"})+" · "+kindLabel;b.setAttribute("aria-label",label);b.title=label;
   text(b,String(d.getDate()));b.onclick=()=>{selectMonthDate(d);const next=root.children[(d.getDay()+6)%7+7*Math.floor(((new Date(y,m,1,12).getDay()+6)%7+d.getDate()-1)/7)] as HTMLElement|undefined;next?.focus()};root.append(b);
  }
 }
@@ -540,18 +548,11 @@ $("month-prev").onclick=()=>moveMonth(-1);
 $("month-next").onclick=()=>moveMonth(1);
 $("month-today").onclick=()=>chooseCalendarYear(null);
 function renderCalendar(now=new Date()){
- const year=displayedYear(now),days=yearDates(year),stats=productionStats(days),current=daySelected.slice(0,4)===String(year)?new Date(daySelected+"T12:00:00"):new Date(year,0,1,12);
+ const year=displayedYear(now),current=daySelected.slice(0,4)===String(year)?new Date(daySelected+"T12:00:00"):new Date(year,0,1,12);
  const selected=dayKey(current);daySelected=selected;month=current;renderMonthGrid(current,now);
 
  const input=$<HTMLInputElement>("selected-date");input.min=year+"-01-01";input.max=year+"-12-31";input.value=selected;
- const shown=viewDates(year);text($("year-progress"),shown.filter(d=>dayKey(d)<=dayKey(timeReference(now))).length+" / "+shown.length);text($("chrono-level"),detailMonth===null?"":monthNames[detailMonth]);$("chrono-back").hidden=detailMonth===null;$("chrono-level-wrap").hidden=detailMonth===null;
- text($("prod-period"),String(year));
- text($("prod-work"),stats?String(stats.work):"—");text($("prod-rest"),stats?String(stats.rest):"—");text($("prod-hours"),stats?String(stats.h40):"—");
- const ms=productionStats(days.filter(d=>d.getMonth()===current.getMonth())),num=(n:number)=>n.toLocaleString("ru-RU");
- text($("prod-month"),ms?monthNames[current.getMonth()]+" · "+ms.work+" раб. / "+ms.rest+" вых. · "+ms.h40+" ч":"");
- text($("prod-norms"),stats?"36 ч — "+num(stats.h36)+" · 24 ч — "+num(stats.h24):"");
- const ep=elapsedProduction(year,now);text($("prod-remaining"),ep?String(ep.remaining):"—");text($("prod-done"),ep?String(ep.doneHours):"—");text($("prod-warning"),[stats?"":"Нет утверждённых данных на этот год",clockNotice].filter(Boolean).join(" · "));
- const kind=productionDay(current);text($("day-type"),kind?dayNames[kind]:"Тип дня неизвестен");
+ text($("chrono-level"),detailMonth===null?"":monthNames[detailMonth]);$("chrono-back").hidden=detailMonth===null;$("chrono-level-wrap").hidden=detailMonth===null;
  renderEventRows($("day-events"),events.filter(e=>dayKey(new Date(e.at))===selected),"Нет зарегистрированных событий");
  drawYear(now);if(timeDataReady&&!playbackRunning)void refreshTimeWindow();
 }
@@ -561,7 +562,7 @@ $<HTMLInputElement>("selected-date").onchange=e=>{const value=(e.target as HTMLI
 function openCalendarMonth(m:number,now=new Date()){if(m<0||m>11)return;cinemaRevealAt=performance.now();wakeCinema();detailMonth=m;const y=displayedYear(now);if(daySelected.slice(0,7)!==dayKey(new Date(y,m,1)).slice(0,7))daySelected=dayKey(new Date(y,m,1,12));renderCalendar(now);animateMonthSwitch()}
 function closeCalendarMonth(now=new Date()){cinemaRevealAt=performance.now();wakeCinema();detailMonth=null;renderCalendar(now);animateMonthSwitch()}
 $("chrono-back").onclick=()=>closeCalendarMonth();
-$("prod-month").onclick=()=>openCalendarMonth(month.getMonth());
+$("month-expand").onclick=()=>openCalendarMonth(month.getMonth());
 wheel.addEventListener("pointerup",e=>{const rect=wheel.getBoundingClientRect();if(!rect.width||!rect.height)return;const x=(e.clientX-rect.left)/rect.width*320-160,y=(e.clientY-rect.top)/rect.height*320-160,r=Math.hypot(x,y);if(r<spiralInner-2||r>160)return;const days=viewDates(displayedYear(new Date())),d=days[spiralIndex(x,y,days.length)];if(detailMonth===null&&r>=142){openCalendarMonth(d.getMonth());return}daySelected=dayKey(d);renderCalendar()});
 wheel.addEventListener("dblclick",e=>{e.preventDefault();closeCalendarMonth()});
 new ResizeObserver(()=>drawYear()).observe(wheel);
@@ -577,7 +578,7 @@ let lastDay=dayKey(new Date()),lastWall=Date.now(),lastMono=performance.now();
 function updateCalendarDate(now:Date){const key=dayKey(now);if(key!==lastDay){const lastDayBefore=lastDay,rollover=key.slice(0,4)!==lastDay.slice(0,4),wasToday=daySelected===lastDay;lastDay=key;if(rollover){yearPulse=performance.now();historyDate=null;playbackRunning=false;autoYear=true;calendarYear=now.getFullYear();daySelected=key;detailMonth=null}else if(autoYear&&wasToday){daySelected=key;if(detailMonth!==null)detailMonth=now.getMonth()}if(key.slice(0,7)!==lastDayBefore.slice(0,7))monthPulse=performance.now();if(key>lastDayBefore){animateBirth(now);cinemaEvent(now,lastDayBefore)}renderCalendar(now)}}
 function checkClock(now:Date,monoNow:number){const delta=now.getTime()-lastWall,monotonic=monoNow-lastMono;lastWall=now.getTime();lastMono=monoNow;const before=clockNotice;if(delta< -2000||Math.abs(delta-monotonic)>5000)clockNotice="Системное время изменилось или ПК проснулся";if(before!==clockNotice)renderCalendar(now)}
 function needsCalendarUpdate(now:Date){return !productionRules[now.getFullYear()]||(now.getMonth()>=8&&!productionRules[now.getFullYear()+1])}
-function clock(){const now=new Date();checkClock(now,performance.now());cinemaDigits(now);text($("clock-date"),now.toLocaleDateString("ru-RU",{day:"numeric",month:"long"}));text($("clock-weekday"),now.toLocaleDateString("ru-RU",{weekday:"long"}));updateCalendarDate(now);if(needsCalendarUpdate(now)&&lastUpdateDay!==dayKey(now)){lastUpdateDay=dayKey(now);void loadCalendarUpdates(true)}}clock();setInterval(clock,1000);
+function clock(){const now=new Date();checkClock(now,performance.now());cinemaDigits(now);updateCalendarDate(now);if(needsCalendarUpdate(now)&&lastUpdateDay!==dayKey(now)){lastUpdateDay=dayKey(now);void loadCalendarUpdates(true)}}clock();setInterval(clock,1000);
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"){clock();wakeCinema()}});
 async function loadCalendarUpdates(refresh=false){if(updatePending)return;updatePending=true;try{const r=await fetch("/api/calendar"+(refresh?"/refresh":""),refresh?{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"}:undefined);if(!r.ok)throw Error("API "+r.status);const data=await r.json();for(const rule of data.calendars??[]){if(!productionRules[rule.year]){productionRules[rule.year]={rest:rule.rest,short:rule.short,work:rule.work};timeGeometryCache.clear()}}calendarSource=data.status??"Локальные данные";text($("calendar-update-status"),calendarSource);renderCalendar()}catch{ text($("calendar-update-status"),"Обновление недоступно · сохранены локальные данные")}finally{updatePending=false}}
 $("calendar-refresh").onclick=()=>void loadCalendarUpdates(true);void loadCalendarUpdates();
