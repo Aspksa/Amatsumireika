@@ -61,7 +61,7 @@ assert.equal(elapsedProduction(2027,new Date(2027,0,1)).remaining,247);
 assert.equal(elapsedProduction(2026,new Date(2027,0,1)).doneHours,1972);
 assert.equal(elapsedProduction(2026,new Date(2027,0,1)).remaining,0);
 chooseCalendarYear(2027,new Date(2027,1,20,12));openCalendarMonth(1,new Date(2027,1,20,12));assert.equal(viewDates(2027).length,28);closeCalendarMonth(new Date(2027,1,20,12));assert.equal(viewDates(2027).length,365);
-assert.ok(rayLength(364,365)>rayLength(0,365));
+assert.ok(calendarRayLength(new Date(2027,11,31))>calendarRayLength(new Date(2027,0,1)));
 assert.equal(eased(0),0);assert.equal(eased(1),1);
 lastWall=10000;lastMono=1000;checkClock(new Date(1000),2000);assert.ok(clockNotice.length>0);
 const spiral=timeGeometry(2027,null);
@@ -71,10 +71,15 @@ assert.ok(Math.hypot(spiral[364].q.x-160,spiral[364].q.y-160)>Math.hypot(spiral[
 assert.ok(timeGeometryCache.size<=32);assert.equal(timeShape,"spiral");
 assert.deepEqual(Array.from({length:12},(_,i)=>seasonOf(i)),["winter","winter","spring","spring","spring","summer","summer","summer","autumn","autumn","autumn","winter"]);assert.equal(seasonPaint(0,true),"#f1f5fa");assert.equal(seasonPaint(6,true),"#68d79a");assert.equal(seasonalRayColor(new Date(2027,6,15),true),seasonPaint(6,true));assert.notEqual(seasonalRayColor(new Date(2027,5,1),true),seasonPaint(5,true));assert.notEqual(seasonalRayColor(new Date(2027,4,31),true),seasonPaint(4,true));assert.notEqual(seasonPaint(0,true),seasonPaint(0,false));
 assert.equal(isoWeek(new Date(2027,0,1)),53);assert.equal(isoWeek(new Date(2027,0,4)),1);assert.equal(isoWeek(new Date(2028,11,31)),52);
-assert.ok(spiral.every(v=>Math.hypot(v.q.x-160,v.q.y-160)<=127.01));
+assert.ok(spiral.every(v=>Math.hypot(v.q.x-160,v.q.y-160)<=139.01));
 assert.equal(new Set(spiral.map(v=>dayKey(v.d))).size,365);assert.equal(new Set(timeGeometry(2028,null).map(v=>dayKey(v.d))).size,366);
 assert.equal(monthCells(2026,10).length,42);assert.equal(monthCells(2026,10).findIndex(Boolean),6);assert.equal(monthCells(2028,1).filter(Boolean).length,29);
-assert.ok(rayLength(364,365)-rayLength(273,365)>rayLength(91,365)-rayLength(0,365));
+assert.ok(calendarRayLength(new Date(2027,11,31))-calendarRayLength(new Date(2027,8,30))>calendarRayLength(new Date(2027,2,31))-calendarRayLength(new Date(2027,0,1)));
+for(let m=0;m<12;m++){const dates=yearDates(2027).filter(d=>d.getMonth()===m);assert.ok(dates.every((d,i)=>!i||calendarRayLength(d)>=calendarRayLength(dates[i-1])));if(m)assert.ok(calendarRayLength(dates[0])>calendarRayLength(new Date(2027,m,0)));assert.ok(monthWeek(dates[0]).count>=4&&monthWeek(dates[0]).count<=6)}
+assert.equal(monthWeek(new Date(2026,10,1)).count,6);
+assert.equal(calendarRayLength(new Date(2027,0,4)),calendarRayLength(new Date(2027,0,10)));
+for(const v of spiral){const hit=calendarHit(v.q.x-160,v.q.y-160,spiral.map(v=>v.d),false);assert.equal(dayKey(hit.date),dayKey(v.d));assert.equal(hit.month,false)}
+assert.equal(calendarHit(0,0,spiral.map(v=>v.d),false),null);
 selectMonthDate(new Date(2027,0,31,12),new Date(2027,0,1));moveMonth(1,new Date(2027,0,1));assert.equal(daySelected,"2027-02-28");moveMonth(-2,new Date(2027,0,1));assert.equal(daySelected,"2026-12-28");
 assert.equal(cinemaBudget("auto",2,2,false).fps,15);
 assert.equal(cinemaBudget("cinema",12,2,false).fps,60);
