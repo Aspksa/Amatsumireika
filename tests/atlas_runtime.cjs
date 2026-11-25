@@ -63,6 +63,8 @@ assert.equal(eased(0),0);assert.equal(eased(1),1);
 lastWall=10000;lastMono=1000;checkClock(new Date(1000),2000);assert.ok(clockNotice.length>0);
 for(const shape of timeShapes){const rays=timeGeometry(shape,2027,null);assert.equal(rays.length,365);assert.ok(rays.every(r=>Number.isFinite(r.p.x)&&Number.isFinite(r.q.y)));assert.equal(timeGeometry(shape,2027,1).length,28)}
 assert.equal(timeGeometry("spiral",2028,null).length,366);
+assert.equal(timeGeometry("projection",2027,null).length,365);
+assert.notEqual(timeShapePoint("projection",1,365,2027,true).x,timeShapePoint("projection",1,365,2028,true).x);
 assert.ok(timeGeometryCache.size<=32);
 setTimeShape("dna");assert.equal(timeShape,"dna");assert.equal(interpolatedRays(2027,performance.now()).length,365);
 console.log("Production calendar 2026/2027, month drilldown, norms and midnight rollover: OK");
