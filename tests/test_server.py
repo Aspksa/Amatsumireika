@@ -86,6 +86,19 @@ class AtlasTest(unittest.TestCase):
                 server.send_chat(value)
         self.assertEqual(len(server.get_chat()["messages"]),4)
 
+    def test_calendar_manifest(self):
+        from unittest.mock import patch
+        record={"year":2027,"source":"https://www.consultant.ru/document/cons_doc_LAW_544706/","decree":"1187","reviewed":True,"rest":["02-22","05-03","05-10","06-14","11-05","12-31"],"short":["02-20","04-30","06-11","11-03"],"work":[],"totals":{"work":247,"rest":118,"short":4,"h40":1972}}
+        result=server.save_calendar_manifest({"schema":1,"calendars":[record]})
+        self.assertEqual(result["calendars"][0]["year"],2027)
+        for bad in ({**record,"source":"https://evil.example/x"},{**record,"reviewed":False},{**record,"rest":["02-30"]},{**record,"totals":{"work":0}},{**record,"short":["02-22"]}):
+            with self.assertRaises(ValueError):
+                server.save_calendar_manifest({"schema":1,"calendars":[bad]})
+        with patch.object(server,"urlopen",side_effect=OSError("offline")):
+            self.assertEqual(len(server.refresh_calendars()["calendars"]),1)
+        server.initialize()
+        self.assertEqual(len(server.get_calendars()["calendars"]),1)
+
     def test_invalid(self):
         with self.assertRaises(ValueError):
             server.add_node("","Знания")
