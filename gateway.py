@@ -122,6 +122,7 @@ def submit(path,data):
             return status(path,ident)
     if not ACTIVE.acquire(False):
         raise ValueError("Another cloud request is running")
+    started=False
     try:
         with cloud_api.LOCK, closing(db_open(path)) as db:
             key,_=cloud_api.read_key(db,path)
@@ -138,14 +139,17 @@ def submit(path,data):
             # Same text within 60 seconds is not billed twice, even with a new ID.
             recent=db.execute("SELECT id FROM cloud_jobs WHERE fingerprint=? AND model=? AND created>=? ORDER BY created DESC LIMIT 1",(fingerprint,model,datetime.fromtimestamp(time.time()-60,timezone.utc).isoformat())).fetchone()
             if recent: 
+                result=status(path,recent[0])
                 ACTIVE.release()
-                return status(path,recent[0])
+                return result
             with db:
                 db.execute("INSERT INTO cloud_jobs(id,model,mode,status,created,prompt,fingerprint) VALUES(?,?,?,?,?,?,?)",(ident,model,mode,"queued",now(),prompt,fingerprint))
         Thread(target=run_job,args=(path,ident,key,model,prompt,mode),daemon=True).start()
+        started=True
         return status(path,ident)
     except Exception:
-        ACTIVE.release()
+        if not started:
+            ACTIVE.release()
         raise
 
 def stream_response(key, payload):
@@ -177,7 +181,16 @@ def run_job(path,ident,key,model,prompt,mode):
         with closing(db_open(path)) as db, db:
             db.execute("UPDATE cloud_jobs SET status='running' WHERE id=?",(ident,))
             db.execute("UPDATE cloud_config SET requests=requests+1,generation_requests=generation_requests+1 WHERE id=1")
-        payload={"model":model,"messages":[{"role":"system","content":"You are Amatsumireika, a helpful assistant. Answer the user's request. Never claim access to local data unless provided."},{"role":"user","content":prompt}],"max_completion_tokens":TOKEN_LIMIT,"stream":True,"stream_options":{"include_usage":True}}
+        messages=[{"role":"system","content":"You are Amatsumireika, a helpful assistant. Answer the user's request. Never claim access to local data unless provided."}]
+        # Include only previous explicitly authorized Cloud.ru chat turns, not local memory.
+        if mode=="chat":
+            with closing(db_open(path)) as db:
+                previous=db.execute("SELECT prompt,answer FROM cloud_jobs WHERE id<>? AND model=? AND mode='chat' AND status='done' ORDER BY created DESC LIMIT 3",(ident,model)).fetchall()
+            for old_prompt,old_answer in reversed(previous):
+                if key not in old_prompt and key not in old_answer:
+                    messages.extend([{"role":"user","content":old_prompt[:3000]},{"role":"assistant","content":old_answer[:4000]}])
+        messages.append({"role":"user","content":prompt})
+        payload={"model":model,"messages":messages,"max_completion_tokens":TOKEN_LIMIT,"stream":True,"stream_options":{"include_usage":True}}
         if mode=="json": payload["response_format"]={"type":"json_object"}
         if mode=="tools": payload["tools"]=[{"type":"function","function":{"name":"local_counts","description":"Read number of local memory records and links","parameters":{"type":"object","properties":{},"additionalProperties":False}}}];payload["tool_choice"]="auto";payload["parallel_tool_calls"]=False
         names={};args={};done=False;last_write=0
