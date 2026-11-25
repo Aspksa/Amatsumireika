@@ -6,6 +6,7 @@ import cognitive
 import evolution
 import documents
 import document_backup
+import document_intelligence
 import document_ocr
 import document_workspace
 import memory_engine as memory
@@ -72,6 +73,12 @@ def initialize():
                 temp=backup.with_suffix(".tmp")
                 with closing(sqlite3.connect(temp)) as dest:db.backup(dest)
                 temp.replace(backup)
+        if db.execute("PRAGMA user_version").fetchone()[0]<10 and memory.table(db,"nodes"):
+            backup=DB.with_name(DB.name+".before-v10.bak")
+            if not backup.exists():
+                temp=backup.with_suffix(".tmp")
+                with closing(sqlite3.connect(temp)) as dest:db.backup(dest)
+                temp.replace(backup)
         db.executescript("""
         CREATE TABLE IF NOT EXISTS nodes(id INTEGER PRIMARY KEY, title TEXT NOT NULL, category TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS edges(source INTEGER REFERENCES nodes(id), target INTEGER REFERENCES nodes(id), PRIMARY KEY(source,target), CHECK(source<target));
@@ -98,11 +105,12 @@ def initialize():
         evolution.init(db)
         documents.init(db)
         document_workspace.init(db)
+        document_intelligence.init(db)
         documents.root(DB).mkdir(parents=True,exist_ok=True)
         memory.init_index(db)
         db.execute("CREATE TABLE IF NOT EXISTS atlas_revision(id INTEGER PRIMARY KEY CHECK(id=1),version INTEGER NOT NULL)")
         db.execute("INSERT OR IGNORE INTO atlas_revision VALUES(1,0)")
-        for table in ("nodes","edges","cog_relations","cog_aliases","evo_versions","evo_review","cog_memory","documents","document_jobs","document_versions","document_sources","document_folders"):
+        for table in ("nodes","edges","cog_relations","cog_aliases","evo_versions","evo_review","cog_memory","documents","document_jobs","document_versions","document_sources","document_folders","doc_fragment_state","doc_source_quotes","doc_classification"):
             for operation in ("INSERT","UPDATE","DELETE"):
                 db.execute(f"CREATE TRIGGER IF NOT EXISTS rev_{table}_{operation.lower()} AFTER {operation} ON {table} BEGIN UPDATE atlas_revision SET version=version+1 WHERE id=1; END")
         if db.execute("PRAGMA user_version").fetchone()[0]<5:
@@ -112,7 +120,7 @@ def initialize():
             db.execute("PRAGMA user_version=5")
         if db.execute("PRAGMA user_version").fetchone()[0]<6:
             db.execute("PRAGMA user_version=6")
-        if db.execute("PRAGMA user_version").fetchone()[0]<9:db.execute("PRAGMA user_version=9")
+        if db.execute("PRAGMA user_version").fetchone()[0]<10:db.execute("PRAGMA user_version=10")
 
 def event(db, kind, detail):
     db.execute("INSERT INTO atlas_events(at,kind,detail) VALUES(?,?,?)",
@@ -587,6 +595,9 @@ class Handler(BaseHTTPRequestHandler):
         elif path=="/api/workspace/graph":
             q=parse_qs(urlsplit(self.path).query)
             self.reply(200,document_workspace.graph(DB,int(q.get("after",["0"])[0]),q.get("q",[""])[0],q.get("folder",[""])[0],q.get("trash",["0"])[0]=="1"))
+        elif path=="/api/workspace/compare":
+            q=parse_qs(urlsplit(self.path).query)
+            self.reply(200,document_intelligence.compare(DB,int(q.get("id",["0"])[0]),int(q["parent"][0]) if "parent" in q else None))
         elif path=="/api/workspace/history":
             self.reply(200,document_workspace.history(DB,int(parse_qs(urlsplit(self.path).query).get("id",["0"])[0])))
         elif path=="/api/documents/thumbnail":
@@ -697,6 +708,8 @@ class Handler(BaseHTTPRequestHandler):
             data=json.loads(self.rfile.read(n))
             if not isinstance(data,dict):
                 raise ValueError("Expected object")
+            if self.path=="/api/workspace/classify":
+                self.reply(200,document_intelligence.approve_classification(DB,data));return
             if self.path=="/api/workspace/repair":
                 if data!={"confirm":True}:raise ValueError("Подтвердите восстановление оригиналов")
                 self.reply(200,document_backup.repair(DB));return
