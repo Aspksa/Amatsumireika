@@ -21,9 +21,11 @@ def recognize(name,raw):
     with tempfile.TemporaryDirectory(prefix="atlas-ocr-") as tmp:
         f=Path(tmp)/("input"+Path(name).suffix.lower())
         f.write_bytes(raw)
+        out=Path(tmp)/"result.json"
         try:
-            p=subprocess.run([str(powershell),"-NoProfile","-NonInteractive","-ExecutionPolicy","Bypass","-File",str(script),"-Path",str(f)],capture_output=True,timeout=45,check=True,creationflags=getattr(subprocess,"CREATE_NO_WINDOW",0))
-            result=json.loads(p.stdout.decode("utf-8-sig"))
+            p=subprocess.run([str(powershell),"-NoProfile","-NonInteractive","-ExecutionPolicy","Bypass","-File",str(script),"-Path",str(f),"-OutputPath",str(out)],capture_output=True,timeout=45,check=True,creationflags=getattr(subprocess,"CREATE_NO_WINDOW",0))
+            if out.stat().st_size>2*1024*1024:raise ValueError("OCR output exceeds limit")
+            result=json.loads(out.read_text(encoding="utf-8-sig"))
             if not isinstance(result,dict) or not isinstance(result.get("text"),str) or type(result.get("pages")) is not int or type(result.get("total")) is not int or not 1<=result["pages"]<=min(10,result["total"]):
                 raise ValueError("Некорректный результат OCR")
             return result
@@ -60,7 +62,6 @@ def run(path,ident):
 THUMB_LOCK=Lock()
 THUMBS={}
 def pdf_thumbnail(path,ident):
-    import base64
     if os.name!="nt":raise ValueError("Миниатюры PDF доступны в Windows")
     name,raw=doc.binary(path,ident)
     if Path(name).suffix.lower()!=".pdf":raise ValueError("Не PDF")
@@ -72,9 +73,11 @@ def pdf_thumbnail(path,ident):
         powershell=Path(os.environ.get("SystemRoot",r"C:\Windows"))/"System32"/"WindowsPowerShell"/"v1.0"/"powershell.exe"
         with tempfile.TemporaryDirectory(prefix="atlas-thumb-") as tmp:
             f=Path(tmp)/"input.pdf";f.write_bytes(raw)
+            out=Path(tmp)/"thumbnail.png"
             try:
-                p=subprocess.run([str(powershell),"-NoProfile","-NonInteractive","-ExecutionPolicy","Bypass","-File",str(script),"-Path",str(f),"-Thumbnail"],capture_output=True,timeout=15,check=True,creationflags=getattr(subprocess,"CREATE_NO_WINDOW",0))
-                img=base64.b64decode(p.stdout.strip(),validate=True)
+                p=subprocess.run([str(powershell),"-NoProfile","-NonInteractive","-ExecutionPolicy","Bypass","-File",str(script),"-Path",str(f),"-OutputPath",str(out),"-Thumbnail"],capture_output=True,timeout=15,check=True,creationflags=getattr(subprocess,"CREATE_NO_WINDOW",0))
+                if not 8<=out.stat().st_size<=1048576:raise ValueError("Invalid PNG size")
+                img=out.read_bytes()
                 if not img.startswith(b"\x89PNG\r\n\x1a\n") or len(img)>1048576:raise ValueError("Invalid PNG")
             except (OSError,subprocess.SubprocessError,ValueError) as exc:raise ValueError("Миниатюра PDF недоступна") from exc
         if len(THUMBS)>=32:THUMBS.pop(next(iter(THUMBS)))
