@@ -28,6 +28,13 @@ def init(db):
     db.execute("""CREATE TABLE IF NOT EXISTS documents(id INTEGER PRIMARY KEY,node_id INTEGER NOT NULL UNIQUE REFERENCES nodes(id),name TEXT NOT NULL,folder TEXT NOT NULL,blob TEXT NOT NULL,sha256 TEXT NOT NULL,size INTEGER NOT NULL,created TEXT NOT NULL,deleted TEXT,extract_status TEXT NOT NULL,content TEXT NOT NULL)""")
     db.execute("CREATE INDEX IF NOT EXISTS documents_folder ON documents(deleted,folder,id)")
     db.execute("CREATE INDEX IF NOT EXISTS documents_hash ON documents(sha256)")
+    db.execute("CREATE INDEX IF NOT EXISTS edges_target ON edges(target,source)")
+    db.execute("CREATE TABLE IF NOT EXISTS document_event_archive(id INTEGER PRIMARY KEY,at TEXT NOT NULL,document_id INTEGER,kind TEXT NOT NULL)")
+    db.execute("CREATE TABLE IF NOT EXISTS document_sources(fingerprint TEXT NOT NULL,document_id INTEGER NOT NULL REFERENCES documents(id),node_id INTEGER REFERENCES nodes(id),PRIMARY KEY(fingerprint,document_id))")
+    db.execute("CREATE INDEX IF NOT EXISTS document_sources_node ON document_sources(node_id)")
+    db.execute("INSERT OR IGNORE INTO document_sources SELECT c.fingerprint,d.id,NULL FROM cog_candidates c JOIN documents d ON c.source=\x27document:\x27||d.id")
+    db.execute("INSERT OR IGNORE INTO document_sources SELECT m.fingerprint,d.id,m.node_id FROM cog_memory m JOIN documents d ON m.source=\x27document:\x27||d.id WHERE m.node_id<>d.node_id")
+    db.execute("UPDATE document_sources SET node_id=(SELECT MIN(m.node_id) FROM cog_memory m WHERE m.fingerprint=document_sources.fingerprint) WHERE node_id IS NULL")
     db.execute("CREATE TABLE IF NOT EXISTS document_folders(path TEXT PRIMARY KEY,created TEXT NOT NULL)")
     db.execute("CREATE TABLE IF NOT EXISTS document_terms(term TEXT NOT NULL,document_id INTEGER NOT NULL REFERENCES documents(id),PRIMARY KEY(term,document_id))")
     db.execute("CREATE INDEX IF NOT EXISTS document_terms_id ON document_terms(document_id)")
@@ -73,17 +80,21 @@ def extract(name,data):
                 elif ext==".xlsx":
                     shared=[]
                     if "xl/sharedStrings.xml" in z.namelist():shared=["".join(t.text or "" for t in i.iter(S+"t")) for i in xml(z,"xl/sharedStrings.xml").iter(S+"si")]
-                    lines=[]
+                    lines=[];remaining=MAX_TEXT
                     for sheet in sorted(n for n in z.namelist() if re.fullmatch(r"xl/worksheets/sheet\d+\.xml",n))[:50]:
-                        lines.append(sheet)
+                        if remaining<=0:break
+                        lines.append(sheet[:remaining]);remaining-=len(sheet)+1
                         for row in xml(z,sheet).iter(S+"row"):
-                            vals=[]
+                            if remaining<=0:break
+                            vals=[];used=0
                             for cell in row.iter(S+"c"):
                                 v=cell.findtext(S+"v","")
                                 if cell.get("t")=="s" and v.isdecimal() and int(v)<len(shared):v=shared[int(v)]
                                 elif cell.get("t")=="inlineStr":v="".join(t.text or "" for t in cell.iter(S+"t"))
-                                vals.append(v)
-                            lines.append("\t".join(vals))
+                                if used>=remaining:break
+                                v=v[:max(0,remaining-used)]
+                                vals.append(v);used+=len(v)+1
+                            line="\t".join(vals);lines.append(line);remaining-=len(line)+1
                     out="\n".join(lines)
                 else:
                     body=xml(z,"content.xml")
@@ -95,6 +106,10 @@ def extract(name,data):
     return "preview_only",""
 def event(db,ident,kind,node=None):
     db.execute("INSERT INTO document_events(at,document_id,kind) VALUES(?,?,?)",(now(),ident,kind))
+    cutoff=db.execute("SELECT COALESCE(MAX(id),0)-5000 FROM document_events").fetchone()[0]
+    if cutoff>0:
+        db.execute("INSERT OR IGNORE INTO document_event_archive SELECT * FROM document_events WHERE id<=?",(cutoff,))
+        db.execute("DELETE FROM document_events WHERE id<=?",(cutoff,))
     if memory.table(db,"cog_events"):
         db.execute("INSERT INTO cog_events(at,kind,detail,node_id) VALUES(?,?,?,?)",(now(),"document",kind,node))
 def meta(row):return {k:row[k] for k in ("id","node_id","name","folder","size","sha256","created","deleted","extract_status")}
@@ -135,6 +150,9 @@ def upload(path,data):
             db.execute("BEGIN IMMEDIATE")
             old=db.execute("SELECT * FROM documents WHERE deleted IS NULL AND memory_norm(name)=? AND folder=? AND sha256=?",(memory.norm(name),where,sha)).fetchone()
             if old:
+                original=path_for(path,old["blob"])
+                if not original.is_file() or original.stat().st_size!=len(raw) or hashlib.sha256(original.read_bytes()).hexdigest()!=sha:
+                    raise ValueError("Существующая копия повреждена; восстановите из резервной копии или загрузите под другим именем")
                 db.rollback()
                 return {**meta(old),"duplicate":True}
             with tmp.open("xb") as out:
@@ -166,7 +184,7 @@ def list_docs(path,q="",trash=False,where="",after=0):
         if where:query+=" AND (folder=? OR substr(folder,1,length(?)+1)=?||\x27/\x27)";args.extend([where,where,where])
         terms=sorted(memory.terms(q))
         if terms:
-            query+=" AND id IN (SELECT document_id FROM document_terms WHERE term IN ("+",".join("?" for _ in terms)+"))";args+=terms
+            query+=" AND (id IN (SELECT document_id FROM document_terms WHERE term IN ("+",".join("?" for _ in terms)+")) OR instr(memory_norm(name),?)>0)";args+=terms+[memory.norm(q)]
         elif q.strip():query+=" AND instr(memory_norm(name),?)>0";args.append(memory.norm(q))
         rows=db.execute(query+" ORDER BY id LIMIT 101",args).fetchall()
         stats=db.execute("SELECT COUNT(*),COALESCE(SUM(size),0),SUM(CASE WHEN extract_status='indexed' THEN 1 ELSE 0 END) FROM documents WHERE deleted IS NULL").fetchone()
@@ -176,7 +194,7 @@ def preview(path,ident):
     with closing(connect(path)) as db:
         r=get(db,ident)
         exists=path_for(path,r["blob"]).is_file()
-        return {**meta(r),"text":r["content"][:MAX_TEXT],"exists":exists}
+        return {**meta(r),"text":r["content"][:MAX_TEXT] if r["extract_status"]=="indexed" else "","exists":exists,"truncated":len(r["content"])>=MAX_TEXT}
 def binary(path,ident):
     with closing(connect(path)) as db:
         r=get(db,ident)
@@ -200,15 +218,19 @@ def action(path,data):
         elif kind=="restore" and r["deleted"]:
             file=path_for(path,r["blob"])
             if not file.is_file() or file.stat().st_size!=r["size"] or hashlib.sha256(file.read_bytes()).hexdigest()!=r["sha256"]:raise ValueError("Файл отсутствует или повреждён")
+            collision(db,r,r["folder"])
             db.execute("UPDATE documents SET deleted=NULL WHERE id=?",(r["id"],))
+            if memory.table(db,"document_jobs"):
+                db.execute("UPDATE document_jobs SET status=\x27queued\x27,error=\x27\x27 WHERE document_id=? AND status=\x27failed\x27",(r["id"],))
         elif kind=="move" and not r["deleted"]:
             where=folder(data.get("folder"))
+            collision(db,r,where)
             db.execute("UPDATE documents SET folder=? WHERE id=?",(where,r["id"]))
             db.execute("UPDATE nodes SET folder=? WHERE id=?",(where,r["node_id"]))
             db.execute("DELETE FROM document_terms WHERE document_id=?",(r["id"],))
             db.executemany("INSERT OR IGNORE INTO document_terms VALUES(?,?)",((w,r["id"]) for w in memory.terms(r["name"]+" "+where+" "+r["content"]) if len(w)<=80))
         elif kind=="candidates" and not r["deleted"]:
-            if r["extract_status"]=="queued":raise ValueError("Дождитесь индексации")
+            if r["extract_status"]!="indexed":raise ValueError("Нет проверенного текстового индекса")
             import cognitive
             count=0
             for line in r["content"].splitlines()[:1000]:
@@ -229,18 +251,22 @@ def action(path,data):
         else:raise ValueError("Недопустимая операция")
         event(db,r["id"],{"trash":"Документ в корзине","restore":"Документ восстановлен","move":"Документ перемещён","link":"Связь документа подтверждена"}[kind],r["node_id"])
         return {"ok":True}
-def health(path):
+def collision(db,r,where):
+    if db.execute("SELECT 1 FROM documents WHERE id<>? AND deleted IS NULL AND folder=? AND sha256=? AND memory_norm(name)=?",(r["id"],where,r["sha256"],memory.norm(r["name"]))).fetchone():raise ValueError("В папке уже есть идентичный документ")
+
+def health(path,deep=False):
     with closing(connect(path)) as db:
-        rows=db.execute("SELECT id,blob,size FROM documents").fetchall()
-        missing=[]
+        rows=db.execute("SELECT id,blob,size,sha256 FROM documents").fetchall()
+        missing=[];corrupt=[]
         for r in rows:
             try:
                 f=path_for(path,r["blob"])
                 if not f.is_file() or f.stat().st_size!=r["size"]:missing.append(r["id"])
+                elif deep and hashlib.sha256(f.read_bytes()).hexdigest()!=r["sha256"]:corrupt.append(r["id"])
             except (OSError,ValueError):missing.append(r["id"])
         known={r["blob"] for r in rows}
         orphaned=sum(1 for item in root(path).iterdir() if item.is_file() and re.fullmatch(r"[a-f0-9]{32}",item.name) and item.name not in known)
-        return {"files":len(rows),"missing":missing,"orphaned":orphaned}
+        return {"files":len(rows),"missing":missing,"corrupt":corrupt,"orphaned":orphaned,"temporary":sum(1 for p in root(path).glob("*.tmp") if p.is_file()),"deep":deep}
 
 def by_node(path,node):
     with closing(connect(path)) as db:

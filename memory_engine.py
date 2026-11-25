@@ -37,6 +37,7 @@ def existing(db,title,category,folder=None):
     args=[category,norm(title)]
     if folder is not None:
         sql+=" AND folder=?";args.append(folder)
+    if table(db,"documents"):sql+=" AND NOT EXISTS(SELECT 1 FROM documents d WHERE d.node_id=nodes.id AND d.deleted IS NOT NULL)"
     return db.execute(sql+" ORDER BY id LIMIT 1",args).fetchone()
 def search(db,query,model=None,limit=8,active_only=False):
     if not isinstance(query,str) or not query.strip() or len(query)>3000: return []
@@ -68,9 +69,9 @@ def search(db,query,model=None,limit=8,active_only=False):
     if table(db,"documents") and q:
         if qvec is None and base!="nodes n":
             marks=",".join("?" for _ in q)
-            base=base.replace(") candidates JOIN"," UNION SELECT d.node_id FROM document_terms t JOIN documents d ON d.id=t.document_id WHERE d.deleted IS NULL AND t.term IN ("+marks+")) candidates JOIN")
+            base=base.replace(") candidates JOIN"," UNION SELECT d.node_id FROM document_terms t JOIN documents d ON d.id=t.document_id WHERE d.deleted IS NULL AND d.extract_status=\x27indexed\x27 AND t.term IN ("+marks+")) candidates JOIN")
             args=args+tuple(sorted(q))
-        cols+=",COALESCE((SELECT content FROM documents d WHERE d.node_id=n.id AND d.deleted IS NULL),\x27\x27)"
+        cols+=",COALESCE((SELECT content FROM documents d WHERE d.node_id=n.id AND d.deleted IS NULL AND d.extract_status=\x27indexed\x27),\x27\x27)"
     else:cols+=",\x27\x27"
     rows=db.execute("SELECT "+cols+" FROM "+base+join+where,args)
     def ranked():
@@ -120,3 +121,6 @@ def index_batch(db,limit=200):
         db.executemany("INSERT OR IGNORE INTO memory_postings VALUES(?,?)",((word,ident) for word in terms(title+" "+category+" "+folder)))
         db.execute("INSERT OR IGNORE INTO memory_indexed VALUES(?)",(ident,))
     return len(rows)
+
+def trashed(db,node):
+    return table(db,"documents") and db.execute("SELECT 1 FROM documents WHERE node_id=? AND deleted IS NOT NULL",(node,)).fetchone() is not None

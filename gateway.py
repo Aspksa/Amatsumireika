@@ -273,7 +273,7 @@ def embed_search(path,data):
     try:
         with cloud_api.LOCK, closing(db_open(path)) as db:
             node=db.execute("SELECT title FROM nodes WHERE id=?",(data["node_id"],)).fetchone()
-            if not node: raise ValueError("Node not found")
+            if not node or memory.trashed(db,data["node_id"]): raise ValueError("Node not found or trashed")
             if node["title"]!=data.get("title"): raise ValueError("Record changed; select it again")
             texts=list(dict.fromkeys([q,node["title"]]))
             missing=[t for t in texts if not db.execute("SELECT 1 FROM embedding_cache WHERE model=? AND digest=?",(EMBED_MODEL,digest(t))).fetchone()]
