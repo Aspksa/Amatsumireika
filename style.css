@@ -82,3 +82,11 @@ main.expanded #controls h2{padding-top:8px;margin:12px 0 6px;font-size:9px}main.
 #save-settings{flex:1;min-height:32px}#export-png{flex:1;min-height:32px}#reset{min-height:32px}
 #left .category-row,#left .entry{padding:8px 3px}#process-matrix{gap:6px}.matrix-cell:not(.active-cell){opacity:.38}
 @media(max-width:760px){main{grid-template-columns:minmax(0,1fr)}main.expanded #stage{inset:auto}main.expanded #right{width:100%;min-width:0;padding:10px}}
+
+/* v0.6 Living atlas */
+#toggle-panel{display:none}body:has(main.expanded) #toggle-panel{display:block}body.panel-hidden main.expanded #right{display:none}body.panel-hidden main.expanded #stage{inset:5px}header nav button{padding:5px 7px}
+#controls output{float:right;color:var(--accent);font-variant-numeric:tabular-nums}
+#controls input[type=range]::-webkit-slider-runnable-track{background:linear-gradient(to right,var(--accent) 0 var(--fill,0%),#32424c var(--fill,0%) 100%)}
+#controls input[type=range]::-moz-range-progress{background:var(--accent);height:5px}
+.group-nav{display:flex;justify-content:space-between;align-items:center;font:10px var(--mono)}#folder-path{overflow-wrap:anywhere;color:var(--muted);font:10px var(--mono);margin:6px 0}
+.matrix-label{grid-column:1/-1;font:9px var(--mono);color:var(--muted)}#tooltip{max-width:245px;overflow-wrap:anywhere}
