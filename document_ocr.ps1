@@ -3,6 +3,7 @@ $ErrorActionPreference='Stop'
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
 Add-Type -AssemblyName System.Runtime.WindowsRuntime
 $null=[Windows.Storage.StorageFile,Windows.Storage,ContentType=WindowsRuntime]
+$null=[Windows.Storage.FileAccessMode,Windows.Storage,ContentType=WindowsRuntime]
 $null=[Windows.Graphics.Imaging.BitmapDecoder,Windows.Graphics.Imaging,ContentType=WindowsRuntime]
 $null=[Windows.Graphics.Imaging.SoftwareBitmap,Windows.Graphics.Imaging,ContentType=WindowsRuntime]
 $null=[Windows.Graphics.Imaging.BitmapTransform,Windows.Graphics.Imaging,ContentType=WindowsRuntime]
@@ -30,15 +31,15 @@ if($Thumbnail){
     $pdf=Await ([Windows.Data.Pdf.PdfDocument]::LoadFromFileAsync($file)) ([Windows.Data.Pdf.PdfDocument])
     if($pdf.PageCount -eq 0){throw 'PDF contains no pages'}
     $page=$pdf.GetPage(0)
-    $stream=New-Object Windows.Storage.Streams.InMemoryRandomAccessStream
+    $stream=[Windows.Storage.Streams.InMemoryRandomAccessStream]::new()
     try{
-        $options=New-Object Windows.Data.Pdf.PdfPageRenderOptions
+        $options=[Windows.Data.Pdf.PdfPageRenderOptions]::new()
         $options.DestinationWidth=[uint32][Math]::Max(1,[Math]::Min(320,320*$page.Size.Width/[Math]::Max(1,$page.Size.Height)))
         $options.DestinationHeight=[uint32][Math]::Max(1,[Math]::Min(320,320*$page.Size.Height/[Math]::Max(1,$page.Size.Width)))
         $options.BitmapEncoderId=[Windows.Graphics.Imaging.BitmapEncoder]::PngEncoderId
         AwaitAction ($page.RenderToStreamAsync($stream,$options))
         if($stream.Size -gt 1048576){throw 'Thumbnail exceeds limit'}
-        $reader=New-Object Windows.Storage.Streams.DataReader($stream.GetInputStreamAt(0))
+        $reader=[Windows.Storage.Streams.DataReader]::new($stream.GetInputStreamAt(0))
         try{
             $count=Await ($reader.LoadAsync([uint32]$stream.Size)) ([uint32])
             $bytes=New-Object byte[] $count
@@ -53,7 +54,7 @@ if($null -eq $engine){throw 'Windows OCR language pack unavailable'}
 function ReadText($stream){
     $decoder=Await ([Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($stream)) ([Windows.Graphics.Imaging.BitmapDecoder])
     if($decoder.PixelWidth -gt 16000 -or $decoder.PixelHeight -gt 16000 -or ([double]$decoder.PixelWidth*$decoder.PixelHeight) -gt 64000000){throw 'Image dimensions exceed limit'}
-    $transform=New-Object Windows.Graphics.Imaging.BitmapTransform
+    $transform=[Windows.Graphics.Imaging.BitmapTransform]::new()
     $ratio=[Math]::Min(1.0,[double][Windows.Media.Ocr.OcrEngine]::MaxImageDimension/[Math]::Max($decoder.PixelWidth,$decoder.PixelHeight))
     $transform.ScaledWidth=[uint32][Math]::Max(1,[Math]::Floor($decoder.PixelWidth*$ratio))
     $transform.ScaledHeight=[uint32][Math]::Max(1,[Math]::Floor($decoder.PixelHeight*$ratio))
@@ -71,9 +72,9 @@ if([IO.Path]::GetExtension($Path).ToLowerInvariant() -eq '.pdf'){
     $total=[int]$pdf.PageCount
     for($i=0;$i -lt [Math]::Min(10,$total);$i++){
         $page=$pdf.GetPage([uint32]$i)
-        $stream=New-Object Windows.Storage.Streams.InMemoryRandomAccessStream
+        $stream=[Windows.Storage.Streams.InMemoryRandomAccessStream]::new()
         try{
-            $options=New-Object Windows.Data.Pdf.PdfPageRenderOptions
+            $options=[Windows.Data.Pdf.PdfPageRenderOptions]::new()
             $options.DestinationWidth=[uint32][Math]::Max(1,[Math]::Min(1600,1600*$page.Size.Width/[Math]::Max(1,$page.Size.Height)))
             $options.DestinationHeight=[uint32][Math]::Max(1,[Math]::Min(1600,1600*$page.Size.Height/[Math]::Max(1,$page.Size.Width)))
             AwaitAction ($page.RenderToStreamAsync($stream,$options))
