@@ -42,6 +42,11 @@ async function main(){
   await evaluate('document.querySelector("#atlas").click()');await delay(400);const paused=await evaluate('Number(document.querySelector("#time-overlay").getAttribute("data-frame"))');await delay(350);assert.equal(await evaluate('Number(document.querySelector("#time-overlay").getAttribute("data-frame"))'),paused,"atlas pauses hidden calendar");
   await evaluate('document.querySelector("#home").click()');await until(async()=>await evaluate('Number(document.querySelector("#time-overlay").getAttribute("data-frame"))')>paused,"home restarts animation");
   assert.deepEqual(errors,[]);
+  assert.equal(await evaluate('document.documentElement.getAttribute("data-app-ready")'),"1");
+  await evaluate('document.querySelector("#atlas").click()');await delay(200);await evaluate('Array.from(document.querySelectorAll(".swatch")).find(b=>b.textContent.includes("Бумага")).click()');await evaluate('document.querySelector("#home").click()');await delay(350);
+  assert.equal(await evaluate('document.documentElement.classList.contains("paper")'),true);
+  assert.equal(await evaluate('getComputedStyle(document.querySelector("#clock")).color'),"rgb(128, 85, 15)");
+  await send("Emulation.setEmulatedMedia",{features:[{name:"prefers-reduced-motion",value:"reduce"}]});await delay(1100);assert.ok((await sample()).lit>80,"reduced motion still renders time rings");assert.deepEqual(errors,[]);
   console.log("Real Chrome: square "+a.width+"x"+a.height+", "+a.lit+" visible pixels, frames "+a.frame+" → "+b.frame+", clock ticks, hide/resume, no uncaught errors.");
  }catch(e){console.error(serverOutput.slice(-2500));console.error(browserOutput.slice(-2500));throw e}
  finally{try{ws?.close()}catch{}browser?.kill();server?.kill();await delay(300);try{fs.rmSync(dir,{recursive:true,force:true})}catch{}}

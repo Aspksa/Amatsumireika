@@ -236,3 +236,16 @@ main:not(.expanded) #left{justify-content:flex-start;align-items:stretch;padding
 .chrono-level[hidden]{display:none!important}.chrono-stats{padding-top:4px}.chrono-period{margin-bottom:7px}.chrono-extra{margin-top:8px}.chrono-month,.chrono-norms{margin-top:7px}
 #time-tools .time-actions button{width:auto}#time-tools .cinema-option{font-size:11px}
 @media(max-width:760px){main:not(.expanded) #left{padding-top:6px;align-self:start}}
+
+/* v1.2.1: readable semantic colors in both themes. */
+:root{--muted:#a0b4c1;--ink:#e1ebef}
+:root.paper{--muted:#455b65;--ink:#21313a}
+.chrono-legend .work{--day-color:#57e4c8}.chrono-legend .weekend{--day-color:#91a7cf}.chrono-legend .holiday{--day-color:#ffd17a}.chrono-legend .short{--day-color:#ffa48f}
+:root.paper .chrono-legend .work{--day-color:#187662}:root.paper .chrono-legend .weekend{--day-color:#49658a}:root.paper .chrono-legend .holiday{--day-color:#8e5f13}:root.paper .chrono-legend .short{--day-color:#a74435}
+.chrono-legend span:before{width:7px;height:7px}.chrono-legend{font-size:10px}
+:root.paper .chrono-clock #clock{color:#80550f;text-shadow:none}
+#core-activity{position:absolute;bottom:25px;left:6px;right:6px;text-align:center;font:11px var(--mono);color:var(--ink);pointer-events:none}
+#core-activity:empty,main.expanded #core-activity{display:none}
+#stage.core-working #core-open{outline:2px solid var(--accent);outline-offset:8px;animation:coreWork 1.4s ease-in-out infinite}
+@keyframes coreWork{50%{outline-offset:16px;outline-color:transparent}}
+@media(prefers-reduced-motion:reduce){#stage.core-working #core-open{animation:none}}
