@@ -1,5 +1,6 @@
 
 import base64
+import os
 import tempfile
 import unittest
 import zipfile
@@ -122,3 +123,39 @@ class ImperialIntegrityTest(unittest.TestCase):
         self.assertEqual(work.quality(self.path)["index_mismatch"],[])
         self.assertEqual(doc.binary(self.path,a["id"])[1],raw)
         with self.assertRaises(ValueError):document_ocr.run(self.path,a["id"])
+
+    def test_rebuild_confirmed_source_edge(self):
+        a=self.put("A.txt","факт: автомобиль = Subaru")
+        doc.action(self.path,{"action":"candidates","id":a["id"]})
+        with closing(doc.connect(self.path)) as db:
+            candidate=db.execute("SELECT id FROM cog_candidates").fetchone()[0]
+        cognitive.review(self.path,{"id":candidate,"action":"approve"})
+        with closing(doc.connect(self.path)) as db,db:
+            db.execute("DELETE FROM edges WHERE source=? OR target=?",(a["node_id"],a["node_id"]))
+        self.assertEqual(work.rebuild_sources(self.path)["links"],1)
+        self.assertEqual(work.quality(self.path)["source_edges_missing"],[])
+        self.assertEqual(work.rebuild_sources(self.path)["links"],0)
+
+    @unittest.skipUnless(os.name=="nt","Windows native PDF renderer")
+    def test_native_windows_thumbnail(self):
+        import document_ocr
+        # Valid single-page PDF; no external renderer or fixtures.
+        stream=b"BT /F1 24 Tf 30 100 Td (TEST DOCUMENT) Tj ET"
+        objects=[
+            b"<< /Type /Catalog /Pages 2 0 R >>",
+            b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 320 180] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",
+            b"<< /Length "+str(len(stream)).encode()+b" >>\nstream\n"+stream+b"\nendstream",
+            b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"
+        ]
+        raw=b"%PDF-1.4\n";offsets=[]
+        for i,obj in enumerate(objects,1):
+            offsets.append(len(raw));raw+=str(i).encode()+b" 0 obj\n"+obj+b"\nendobj\n"
+        xref=len(raw)
+        raw+=b"xref\n0 6\n0000000000 65535 f \n"
+        for offset in offsets:raw+=("%010d 00000 n \n"%offset).encode()
+        raw+=b"trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n"+str(xref).encode()+b"\n%%EOF\n"
+        a=doc.upload(self.path,{"name":"test.pdf","data":base64.b64encode(raw).decode()})
+        img=document_ocr.pdf_thumbnail(self.path,a["id"])
+        self.assertTrue(img.startswith(b"\x89PNG\r\n\x1a\n"))
+        self.assertEqual(doc.binary(self.path,a["id"])[1],raw)
