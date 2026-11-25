@@ -61,3 +61,6 @@ Self-hosted OFL fonts: Inter (UI), Source Serif 4 (system/personality text), Man
 
 ### Clear month/week spiral
 The annual view has only 12 horizontal month labels. Each Monday-first calendar week (partial weeks included) is a visible step made of individual daily rays, with increasing length within each month and throughout the year. January starts near the clock and December reaches the outer edge. Today and its week are gold; selected day is independently marked. Hover shows date/week; month caption clicks drill down to day detail. Calendar remains synchronized and is placed farther below the wheel. Seasonal colors, offline fonts and production calendar data are unchanged.
+
+### Radial month labels
+Annual view now uses full Russian month names directed outward along the month bands, with the left half flipped for readability. The 384-unit annual viewport reserves a label gutter without changing day geometry; month detail retains its 320-unit view. Text extent is bounded inside the square viewport and label hit regions use the same transform as Canvas and the animated overlay. Seasonal colors and gold live-month emphasis are retained. The calendar remains below the spiral.

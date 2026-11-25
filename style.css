@@ -373,3 +373,7 @@ h2{font:650 var(--type-xs)/1.4 var(--sans);letter-spacing:.08em}
 #spiral-tooltip{position:absolute;bottom:3px;left:50%;transform:translateX(-50%);z-index:4;pointer-events:none;max-width:95%;width:max-content;text-align:center;background:var(--surface);color:var(--ink);padding:5px 9px;border-radius:6px;font:500 11px/1.4 var(--sans)}
 #spiral-tooltip[hidden]{display:none}
 @media(max-width:760px){#left .month-calendar{margin-top:24px}}
+
+/* Full radial month names: annual label gutter shares the exact Canvas/overlay transform. */
+#left[data-time-detail="year"] .chrono-clock{width:37%}
+#left[data-time-detail="year"] .chrono-clock #clock{font-size:clamp(12px,7.8cqw,34px)}

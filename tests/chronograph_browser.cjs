@@ -45,14 +45,21 @@ async function main(){
   assert.equal(await evaluate('document.querySelector("#month-grid").children.length'),42);
   assert.ok(await evaluate('document.querySelector(".month-calendar").getBoundingClientRect().top-document.querySelector(".chrono-wheel").getBoundingClientRect().bottom>=23'),"calendar below wheel");
   assert.equal(await evaluate('document.querySelector("#spiral-tooltip").hidden'),true);
-  await evaluate('(()=>{const w=document.querySelector("#year-wheel"),r=w.getBoundingClientRect();w.dispatchEvent(new PointerEvent("pointermove",{clientX:r.left+r.width/2,clientY:r.top+r.height*(160-76)/320,bubbles:true}))})()');
+  await evaluate('(()=>{const w=document.querySelector("#year-wheel"),r=w.getBoundingClientRect();w.dispatchEvent(new PointerEvent("pointermove",{clientX:r.left+r.width/2,clientY:r.top+r.height*(192-76)/384,bubbles:true}))})()');
   assert.equal(await evaluate('document.querySelector("#spiral-tooltip").hidden'),false);
   await evaluate('document.querySelector("#year-wheel").dispatchEvent(new PointerEvent("pointerleave"))');
   assert.equal(await evaluate('document.querySelector("#spiral-tooltip").hidden'),true);
+  assert.equal(await evaluate('document.querySelector("#left").dataset.timeDetail'),"year");
+  const reset=()=>evaluate('document.querySelector("#month-grid").dispatchEvent(new KeyboardEvent("keydown",{key:"Home",bubbles:true}))');
+  // December's radial label lies in the added gutter; click it to open month detail.
+  await evaluate(`(()=>{const w=document.querySelector("#year-wheel"),r=w.getBoundingClientRect(),y=new Date().getFullYear(),n=(Date.UTC(y+1,0,1)-Date.UTC(y,0,1))/86400000,a=-Math.PI/2-(n-15.5)*2*Math.PI/n;w.dispatchEvent(new PointerEvent("pointerup",{clientX:r.left+r.width*(.5+162*Math.cos(a)/384),clientY:r.top+r.height*(.5+162*Math.sin(a)/384),bubbles:true}))})()`);
+  assert.equal(await evaluate('document.querySelector("#left").dataset.timeDetail'),"month");
+  assert.ok(await evaluate('document.querySelector("#month-heading").textContent.toLowerCase().includes("декабрь")'));
+  await reset();
+  assert.equal(await evaluate('document.querySelector("#left").dataset.timeDetail'),"year");
   assert.ok(await evaluate(`getComputedStyle(document.querySelector("#month-heading")).getPropertyValue("--season-dark").trim().startsWith("#")`));
   assert.equal(await evaluate('document.querySelector(".chrono-select,.month-footer,#month-today,#selected-date,#calendar-date-label,#month-expand")===null'),true);
   assert.equal(await evaluate('getComputedStyle(document.querySelector(".month-calendar")).borderTopWidth'),"0px");
-  const reset=()=>evaluate('document.querySelector("#month-grid").dispatchEvent(new KeyboardEvent("keydown",{key:"Home",bubbles:true}))');
   await reset();
   await evaluate('(()=>{for(let i=0;i<Math.abs((new Date().getFullYear()-2026)*12+new Date().getMonth()-10);i++)document.querySelector(new Date().getFullYear()*12+new Date().getMonth()>2026*12+10?"#month-prev":"#month-next").click()})()');
   assert.equal(await evaluate('document.querySelector("[data-date=\\"2026-11-04\\"]").classList.contains("kind-holiday")'),true);
