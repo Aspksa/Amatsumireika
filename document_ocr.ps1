@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string]$Path,[switch]$Thumbnail)
+param([Parameter(Mandatory=$true)][string]$Path,[Parameter(Mandatory=$true)][string]$OutputPath,[switch]$Thumbnail)
 $ErrorActionPreference='Stop'
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
 Add-Type -AssemblyName System.Runtime.WindowsRuntime
@@ -24,7 +24,7 @@ function Await($operation,[Type]$type){
 }
 function AwaitAction($operation){
     $task=$action.Invoke($null,@($operation))
-    $task.GetAwaiter().GetResult()
+    $null=$task.GetAwaiter().GetResult()
 }
 if($Thumbnail){
     $file=Await ([Windows.Storage.StorageFile]::GetFileFromPathAsync($Path)) ([Windows.Storage.StorageFile])
@@ -43,8 +43,8 @@ if($Thumbnail){
         try{
             $count=Await ($reader.LoadAsync([uint32]$stream.Size)) ([uint32])
             $bytes=New-Object byte[] $count
-            $reader.ReadBytes($bytes)
-            [Convert]::ToBase64String($bytes)
+            $null=$reader.ReadBytes($bytes)
+            [IO.File]::WriteAllBytes($OutputPath,$bytes)
         }finally{$reader.Dispose()}
     }finally{$stream.Dispose();$page.Dispose()}
     exit
@@ -78,12 +78,13 @@ if([IO.Path]::GetExtension($Path).ToLowerInvariant() -eq '.pdf'){
             $options.DestinationWidth=[uint32][Math]::Max(1,[Math]::Min(1600,1600*$page.Size.Width/[Math]::Max(1,$page.Size.Height)))
             $options.DestinationHeight=[uint32][Math]::Max(1,[Math]::Min(1600,1600*$page.Size.Height/[Math]::Max(1,$page.Size.Width)))
             AwaitAction ($page.RenderToStreamAsync($stream,$options))
-            $stream.Seek(0)
-            $parts.Add((ReadText $stream))
+            $null=$stream.Seek(0)
+            $null=$parts.Add((ReadText $stream))
         }finally{$stream.Dispose();$page.Dispose()}
     }
 }else{
     $stream=Await ($file.OpenAsync([Windows.Storage.FileAccessMode]::Read)) ([Windows.Storage.Streams.IRandomAccessStream])
-    try{$parts.Add((ReadText $stream))}finally{$stream.Dispose()}
+    try{$null=$parts.Add((ReadText $stream))}finally{$stream.Dispose()}
 }
-@{text=($parts -join ([Environment]::NewLine+[Environment]::NewLine));pages=$parts.Count;total=$total;language=$engine.RecognizerLanguage.LanguageTag} | ConvertTo-Json -Compress
+$json=@{text=($parts -join ([Environment]::NewLine+[Environment]::NewLine));pages=$parts.Count;total=$total;language=$engine.RecognizerLanguage.LanguageTag} | ConvertTo-Json -Compress
+[IO.File]::WriteAllText($OutputPath,$json,[System.Text.UTF8Encoding]::new($false))
