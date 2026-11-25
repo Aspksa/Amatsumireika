@@ -731,14 +731,14 @@ document.addEventListener("visibilitychange",()=>{if(document.visibilityState===
 async function loadCalendarUpdates(refresh=false){if(updatePending)return;updatePending=true;try{const r=await fetch("/api/calendar"+(refresh?"/refresh":""),refresh?{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"}:undefined);if(!r.ok)throw Error("API "+r.status);const data=await r.json();for(const rule of data.calendars??[]){if(!productionRules[rule.year]){productionRules[rule.year]={rest:rule.rest,short:rule.short,work:rule.work};timeGeometryCache.clear()}}calendarSource=data.status??"Локальные данные";text($("calendar-update-status"),calendarSource);renderCalendar()}catch{ text($("calendar-update-status"),"Обновление недоступно · сохранены локальные данные")}finally{updatePending=false}}
 $("calendar-refresh").onclick=()=>void loadCalendarUpdates(true);void loadCalendarUpdates();
 
-type ChatMessage={id:number;role:"user"|"system";content:string;created_at:string};
+type ChatMessage={id:number|string;role:"user"|"system"|"assistant";content:string;created_at:string};
 let chatBusy=false,chatReady=false,chatMessages:ChatMessage[]=[];
 const chatInput=$<HTMLTextAreaElement>("chat-input"),chatSend=$<HTMLButtonElement>("chat-send");
 function syncChat(){chatSend.disabled=chatBusy||!chatReady||!chatInput.value.trim()}
-function renderChat(){const root=$("chat-log");root.replaceChildren();if(!chatMessages.length){const empty=document.createElement("div");empty.className="chat-empty";text(empty,"История сообщений пока пуста. /помощь — локальные команды.");root.append(empty)}for(const m of chatMessages){const item=document.createElement("article");item.className="chat-message "+m.role;const meta=document.createElement("div");meta.className="chat-meta";text(meta,(m.role==="user"?"Вы":"Система")+" · "+new Date(m.created_at).toLocaleString("ru-RU"));const body=document.createElement("div");text(body,m.content);item.append(meta,body);root.append(item)}root.scrollTop=root.scrollHeight}
+function renderChat(){const root=$("chat-log");root.replaceChildren();if(!chatMessages.length){const empty=document.createElement("div");empty.className="chat-empty";text(empty,"История сообщений пока пуста. /помощь — локальные команды.");root.append(empty)}for(const m of chatMessages){const item=document.createElement("article");item.className="chat-message "+m.role;const meta=document.createElement("div");meta.className="chat-meta";text(meta,(m.role==="user"?"Вы":m.role==="assistant"?"Amatsumireika":"Система")+" · "+new Date(m.created_at).toLocaleString("ru-RU"));const body=document.createElement("div");text(body,m.content);item.append(meta,body);root.append(item)}root.scrollTop=root.scrollHeight}
 async function loadChat(){try{const r=await fetch("/api/chat");if(!r.ok)throw Error("API "+r.status);const result=await r.json();chatMessages=result.messages;chatReady=true;renderChat();text($("chat-status"),"Локальное хранение · последние 200 сообщений")}catch{chatReady=false;text($("chat-status"),"История недоступна. Обновите страницу.")}syncChat()}
 chatInput.oninput=syncChat;
-async function sendChat(){if(chatBusy||!chatReady)return;const content=chatInput.value.trim();if(!content)return;chatBusy=true;syncChat();text($("chat-status"),"Сохранение…");$("stage").classList.add("core-working");text($("core-activity"),"Локальная обработка · SQLite");try{const r=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({content})});const result=await r.json();if(!r.ok)throw Error(result.error??"API "+r.status);chatMessages=result.messages;if(chatInput.value.trim()===content)chatInput.value="";renderChat();signalTime();text($("core-activity"),"Сообщение сохранено");text($("chat-status"),"Сохранено в SQLite · модель не подключена")}catch(err){text($("core-activity"),"Ошибка локальной обработки");text($("chat-status"),"Не отправлено: "+String(err))}finally{$("stage").classList.remove("core-working");chatBusy=false;syncChat();chatInput.focus()}}
+async function sendChat(){if(chatBusy||!chatReady)return;const content=chatInput.value.trim();if(!content)return;if($<HTMLInputElement>("cloud-consent").checked&&!content.startsWith("/")){void sendCloudChat(content);return}chatBusy=true;syncChat();text($("chat-status"),"Сохранение…");$("stage").classList.add("core-working");text($("core-activity"),"Локальная обработка · SQLite");try{const r=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({content})});const result=await r.json();if(!r.ok)throw Error(result.error??"API "+r.status);chatMessages=result.messages;if(chatInput.value.trim()===content)chatInput.value="";renderChat();signalTime();text($("core-activity"),"Сообщение сохранено");text($("chat-status"),"Сохранено в SQLite · модель не подключена")}catch(err){text($("core-activity"),"Ошибка локальной обработки");text($("chat-status"),"Не отправлено: "+String(err))}finally{$("stage").classList.remove("core-working");chatBusy=false;syncChat();chatInput.focus()}}
 $<HTMLFormElement>("chat-form").onsubmit=e=>{e.preventDefault();void sendChat()};
 chatInput.addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey&&!e.isComposing){e.preventDefault();void sendChat()}});
 void loadChat();
@@ -800,7 +800,7 @@ $<HTMLFormElement>("work-day-form").onsubmit=e=>{e.preventDefault();void workWri
 document.documentElement.setAttribute("data-app-ready","1");
 fetch("/api/atlas").then(r=>{if(!r.ok)throw new Error("API "+r.status);return r.json()}).then(s=>{setState(s);if(timeDataReady){timeWindowKey="";void refreshTimeWindow()}}).catch(err=>{setState({nodes:[],edges:[],categories:state.categories});text($("status"),"API недоступен · демо");text($("message"),String(err))});
 
-type CloudState={key_present:boolean;storage:string;model:string;models:string[];status:string;checked:string|null;requests:number;successes:number;failures:number;input_tokens:number;output_tokens:number;generation_requests:number};
+type CloudState={key_present:boolean;storage:string;model:string;models:string[];status:string;checked:string|null;requests:number;successes:number;failures:number;input_tokens:number;output_tokens:number;generation_requests:number;capabilities?:{id:string;kind:string;capabilities:string[];source:string}[];generation_enabled?:boolean};
 let cloudState:CloudState|null=null,cloudBusy=false;
 const cloudKey=$<HTMLInputElement>("cloud-key"),cloudModel=$<HTMLSelectElement>("cloud-model");
 function renderCloud(v:CloudState){
@@ -810,15 +810,51 @@ function renderCloud(v:CloudState){
  text($("cloud-storage"),v.storage==="windows_dpapi"?"Защита Windows":v.storage==="session"?"Только текущий сеанс":v.storage==="locked"?"Введите ключ заново":"Ключ не сохранён");
  cloudKey.placeholder=v.key_present?"Ключ сохранён · введите новый для замены":"Введите API-ключ";
  cloudModel.replaceChildren();const placeholder=document.createElement("option");placeholder.value="";text(placeholder,"Выберите основную модель");cloudModel.append(placeholder);
- for(const model of v.models){const option=document.createElement("option");option.value=model;text(option,model);cloudModel.append(option)}cloudModel.value=v.model;
+ for(const model of v.models){const option=document.createElement("option");option.value=model;text(option,model);cloudModel.append(option)}cloudModel.value=v.model;const rates=$<HTMLSelectElement>("budget-model");const oldRate=rates.value;rates.replaceChildren();const empty=document.createElement("option");empty.value="";text(empty,"Выберите модель");rates.append(empty);for(const id of v.models){const opt=document.createElement("option");opt.value=id;text(opt,id);rates.append(opt)}rates.value=v.models.includes(oldRate)?oldRate:v.model;const cap=v.capabilities?.find(c=>c.id===v.model);text($("cloud-capability"),cap?cap.kind+" · "+(cap.capabilities.join(", ")||"Дополнительные возможности не подтверждены")+" · "+cap.source:"Выберите модель");
  for(const [id,value] of [["cloud-requests",v.requests],["cloud-successes",v.successes],["cloud-failures",v.failures],["cloud-input-tokens",v.input_tokens],["cloud-output-tokens",v.output_tokens],["cloud-generations",v.generation_requests]] as [string,number][]){text($(id),String(value))}
  text($("cloud-checked"),v.checked?"Последний запрос: "+new Date(v.checked).toLocaleString("ru-RU"):"Запросы каталога ещё не выполнялись");syncCloud();
 }
 function syncCloud(){$<HTMLButtonElement>("cloud-refresh").disabled=cloudBusy||!cloudState?.key_present;$<HTMLButtonElement>("cloud-save-key").disabled=cloudBusy;cloudModel.disabled=cloudBusy||!cloudState?.models.length||!cloudState.key_present;cloudKey.disabled=cloudBusy}
 async function cloudAction(url:string,data?:unknown){if(cloudBusy)return;cloudBusy=true;syncCloud();text($("cloud-message"),"Загрузка…");try{const v=await jsonRequest(url,data);renderCloud(v);text($("cloud-message"),data===undefined?"":url.endsWith("/models")?"Результат запроса указан в статусе.":"Настройки сохранены.")}catch(err){text($("cloud-message"),String(err));if(cloudState)renderCloud(cloudState)}finally{cloudBusy=false;syncCloud()}}
 function closeProjectSettings(){if(!document.body.classList.contains("settings-open"))return;document.body.classList.remove("settings-open");$("project-settings-page").hidden=true;$("project-settings").setAttribute("aria-pressed","false");cloudKey.value="";resize();wakeCinema()}
-$("project-settings").onclick=()=>{if(document.body.classList.contains("settings-open")){closeProjectSettings();return}document.body.classList.add("settings-open");$("project-settings-page").hidden=false;$("project-settings").setAttribute("aria-pressed","true");void cloudAction("/api/cloud/settings")};
+$("project-settings").onclick=()=>{if(document.body.classList.contains("settings-open")){closeProjectSettings();return}document.body.classList.add("settings-open");$("project-settings-page").hidden=false;$("project-settings").setAttribute("aria-pressed","true");void cloudAction("/api/cloud/settings");void loadCloudHistory();void loadBudget()};
 $("settings-back").onclick=closeProjectSettings;
 $("cloud-key-form").addEventListener("submit",e=>{e.preventDefault();const key=cloudKey.value.trim();cloudKey.value="";if(key)void cloudAction("/api/cloud/settings",{api_key:key})});
 $("cloud-refresh").onclick=()=>void cloudAction("/api/cloud/models",{confirm:true});
-cloudModel.onchange=()=>{if(cloudModel.value)void cloudAction("/api/cloud/settings",{model:cloudModel.value})};
+cloudModel.onchange=()=>{if(cloudModel.value)void cloudAction("/api/cloud/settings",{model:cloudModel.value}).then(()=>loadBudget())};
+
+type CloudJob={id:string;status:string;answer:string;error:string;tool_result:string;input_tokens:number|null;output_tokens:number|null;model:string};
+async function loadCloudHistory(){try{const v=await jsonRequest("/api/cloud/history");const root=$("cloud-history");root.replaceChildren();for(const model of v.models){const p=document.createElement("p");text(p,model.model+" · "+model.requests+" запросов · "+model.input_tokens+"/"+model.output_tokens+" токенов · неизвестный расход: "+model.unknown_usage+" · "+(model.latency_ms??"—")+" мс");root.append(p)}for(const job of v.jobs){const p=document.createElement("p");text(p,new Date(job.created).toLocaleString("ru-RU")+" · "+job.model+" · "+job.status+" · "+(job.input_tokens??"?")+"/"+(job.output_tokens??"?")+" · "+(job.latency_ms??"—")+" мс");root.append(p)}}catch(err){text($("cloud-history"),String(err))}}
+$("cloud-history-refresh").onclick=()=>void loadCloudHistory();
+$("memory-search").onclick=async()=>{try{const v=await jsonRequest("/api/cloud/memory?q="+encodeURIComponent($<HTMLInputElement>("memory-query").value));const root=$("memory-results");root.replaceChildren();for(const item of v){const p=document.createElement("p");text(p,item.category+" · "+item.title);root.append(p)}if(!v.length)text(root,"Совпадений нет");const select=$<HTMLSelectElement>("embedding-node");select.replaceChildren();const blank=document.createElement("option");blank.value="";text(blank,"Выберите запись");select.append(blank);for(const item of v){const option=document.createElement("option");option.value=String(item.id);option.dataset.title=item.title;text(option,item.title);select.append(option)}}catch(err){text($("memory-results"),String(err))}};
+async function sendCloudChat(content:string){
+ if(chatBusy)return;const consent=$<HTMLInputElement>("cloud-consent");consent.checked=false;
+ chatBusy=true;syncChat();$("stage").classList.add("core-working");text($("core-activity"),"Cloud.ru · очередь");text($("chat-mode"),"Cloud.ru · разовый запрос");
+ const root=$("chat-log"),user=document.createElement("article"),reply=document.createElement("article");user.className="chat-message user";reply.className="chat-message system";text(user,content);text(reply,"Ожидание ответа…");root.append(user,reply);root.scrollTop=root.scrollHeight;
+ const id=crypto.randomUUID(),mode=$<HTMLSelectElement>("cloud-chat-mode").value;
+ try{let job:CloudJob=await jsonRequest("/api/cloud/generate",{id,content,mode,confirm:true});chatInput.value="";
+ for(let i=0;i<500;i++){
+  text(reply,job.answer+(job.tool_result?"\nЛокальный результат: "+job.tool_result:"")||"Ожидание ответа…");
+  root.scrollTop=root.scrollHeight;text($("core-activity"),"Cloud.ru · "+job.status);text($("chat-status"),job.status==="running"?"Генерация…":job.status);
+  if(!["queued","running"].includes(job.status)){if(job.status!=="done")text($("chat-status"),"Запрос не завершён: "+job.error+" · автоматического повтора нет");else text($("chat-status"),"Готово · токены "+(job.input_tokens??"?")+"/"+(job.output_tokens??"?"));signalTime();break}
+  await new Promise(resolve=>setTimeout(resolve,400));job=await jsonRequest("/api/cloud/job?id="+encodeURIComponent(job.id));
+ }
+ }catch(err){text($("chat-status"),"Проверьте историю запросов перед повтором: "+String(err))}
+ finally{chatBusy=false;syncChat();$("stage").classList.remove("core-working");text($("core-activity"),"Cloud.ru · запрос завершён или связь прервана");chatInput.focus();void loadCloudHistory();void loadChat()}
+}
+
+async function loadBudget(){try{const v=await jsonRequest("/api/cloud/budget");$<HTMLInputElement>("budget-day").value=String(v.day);$<HTMLInputElement>("budget-month").value=String(v.month);const rate=v.rates.find((r:{model:string})=>r.model===$<HTMLSelectElement>("budget-model").value);$<HTMLInputElement>("budget-input").value=String(rate?.input??0);$<HTMLInputElement>("budget-output").value=String(rate?.output??0);text($("budget-status"),"Расчёт: "+v.day_used+" ₽ сегодня / "+v.month_used+" ₽ за месяц")}catch(err){text($("budget-status"),String(err))}}
+$("budget-save").onclick=async()=>{try{const n=(id:string)=>Number($<HTMLInputElement>(id).value);await jsonRequest("/api/cloud/budget",{day:n("budget-day"),month:n("budget-month"),model:$<HTMLSelectElement>("budget-model").value,input:n("budget-input"),output:n("budget-output")});await loadBudget()}catch(err){text($("budget-status"),String(err))}};
+
+$<HTMLSelectElement>("budget-model").onchange=()=>void loadBudget();
+let embeddingBusy=false;
+$("embedding-search").onclick=async()=>{
+ if(embeddingBusy)return;
+ const select=$<HTMLSelectElement>("embedding-node"),confirm=$<HTMLInputElement>("embedding-confirm"),query=$<HTMLInputElement>("memory-query").value.trim();
+ if(!select.value||!query){text($("embedding-status"),"Выберите запись и введите запрос");return}
+ const title=select.options[select.selectedIndex]?.dataset.title;
+ const allowed=confirm.checked;confirm.checked=false;embeddingBusy=true;$<HTMLButtonElement>("embedding-search").disabled=true;
+ try{const v=await jsonRequest("/api/cloud/embed-search",{query,node_id:Number(select.value),title,confirm:allowed});const root=$("memory-results");root.replaceChildren();for(const item of v.results){const p=document.createElement("p");text(p,item.category+" · "+item.title);root.append(p)}text($("embedding-status"),v.cache?"Локальный кеш, без облачного запроса":"Получены и сохранены эмбеддинги");void loadCloudHistory();void loadBudget()}
+ catch(err){text($("embedding-status"),String(err))}
+ finally{embeddingBusy=false;$<HTMLButtonElement>("embedding-search").disabled=false}
+};

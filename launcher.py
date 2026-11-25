@@ -119,6 +119,8 @@ def main():
         state.unlink(missing_ok=True)
         build_frontend()
         server.initialize()
+        if not args.check:
+            server.gateway.recover(server.DB)
         server.load_bundled_calendars()
         if args.check:
             LOG.info("CHECK OK: frontend SHA-256 and SQLite initialization.")

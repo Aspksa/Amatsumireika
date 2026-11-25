@@ -1,6 +1,8 @@
 """Local-only atlas API and static frontend; no third-party Python packages."""
 import argparse
 import cloud_api
+import gateway
+import budget
 import logging
 import secrets
 import math
@@ -354,7 +356,17 @@ def get_events():
 
 def chat_history(db):
     rows = db.execute("SELECT id,role,content,created_at FROM chat_messages ORDER BY id DESC LIMIT 200").fetchall()
-    return {"messages":[dict(id=i,role=r,content=c,created_at=a) for i,r,c,a in reversed(rows)],"model_connected":False}
+    messages=[dict(id=i,role=r,content=c,created_at=a) for i,r,c,a in reversed(rows)]
+    if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='cloud_jobs'").fetchone():
+        for ident,prompt,answer,created,finished,job_status,tool_result in db.execute("SELECT id,prompt,answer,created,finished,status,tool_result FROM cloud_jobs WHERE mode<>'embedding' ORDER BY created DESC LIMIT 100"):
+            messages.append(dict(id=ident+"-user",role="user",content=prompt,created_at=created))
+            if answer or tool_result or job_status not in ("queued","running"):
+                body=answer+("\nЛокальный результат: "+tool_result if tool_result else "")
+                if job_status!="done":
+                    body+=(("\n" if body else "")+"[Cloud.ru: "+job_status+"; проверьте историю запросов]")
+                messages.append(dict(id=ident+"-assistant",role="assistant",content=body,created_at=finished or created))
+    messages.sort(key=lambda row: row["created_at"])
+    return {"messages":messages[-200:],"model_connected":False}
 
 def get_chat():
     with closing(connect()) as db:
@@ -476,6 +488,14 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(200,{"app":"Amatsumireika","instance":self.server.instance,"ready":True})
         elif path=="/api/cloud/settings":
             self.reply(200,cloud_api.state(DB))
+        elif path=="/api/cloud/budget":
+            self.reply(200,budget.state(DB))
+        elif path=="/api/cloud/history":
+            self.reply(200,gateway.history(DB))
+        elif path=="/api/cloud/job":
+            self.reply(200,gateway.status(DB,parse_qs(urlsplit(self.path).query).get("id",[""])[0]))
+        elif path=="/api/cloud/memory":
+            self.reply(200,gateway.search(DB,parse_qs(urlsplit(self.path).query).get("q",[""])[0][:3000],gateway.EMBED_MODEL))
         elif path=="/api/atlas":
             self.reply(200,snapshot())
         elif path=="/api/calendar":
@@ -524,6 +544,15 @@ class Handler(BaseHTTPRequestHandler):
             data=json.loads(self.rfile.read(n))
             if not isinstance(data,dict):
                 raise ValueError("Expected object")
+            if self.path=="/api/cloud/embed-search":
+                self.reply(200,gateway.embed_search(DB,data))
+                return
+            if self.path=="/api/cloud/budget":
+                self.reply(200,budget.save(DB,data))
+                return
+            if self.path=="/api/cloud/generate":
+                self.reply(202,gateway.submit(DB,data))
+                return
             if self.path=="/api/cloud/settings":
                 self.reply(200,cloud_api.save(DB,data))
                 return
@@ -575,6 +604,7 @@ def main():
     parser.add_argument("--port",type=int,default=0)
     args=parser.parse_args()
     initialize()
+    gateway.recover(DB)
     load_bundled_calendars()
     logging.basicConfig(level=logging.INFO,format="%(levelname)s %(message)s")
     with LocalServer(("127.0.0.1",args.port),Handler) as server:

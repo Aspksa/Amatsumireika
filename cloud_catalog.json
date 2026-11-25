@@ -1,0 +1,780 @@
+{
+  "ai-sage/GigaChat3-10B-A1.8B": {
+    "kind": "LLM",
+    "placement": "internal",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "ai-sage/GigaChat3.5-432B-A28B": {
+    "kind": "LLM",
+    "placement": "internal",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "hivetrace/HiveTraceGuard-Pro": {
+    "kind": "LLM",
+    "placement": "internal",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "Qwen/Qwen3-Coder-Next": {
+    "kind": "LLM",
+    "placement": "internal",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "deepseek-ai/DeepSeek-V4-Pro": {
+    "kind": "LLM",
+    "placement": "internal",
+    "capabilities": [
+      "tools",
+      "json",
+      "reasoning"
+    ]
+  },
+  "MiniMaxAI/MiniMax-M2.5": {
+    "kind": "LLM",
+    "placement": "internal",
+    "capabilities": [
+      "tools",
+      "json",
+      "reasoning"
+    ]
+  },
+  "MiniMaxAI/MiniMax-M3": {
+    "kind": "LLM",
+    "placement": "internal",
+    "capabilities": [
+      "tools",
+      "json",
+      "reasoning"
+    ]
+  },
+  "openai/gpt-oss-120b": {
+    "kind": "LLM",
+    "placement": "internal",
+    "capabilities": [
+      "tools",
+      "json",
+      "reasoning"
+    ]
+  },
+  "zai-org/GLM-4.7": {
+    "kind": "LLM",
+    "placement": "internal",
+    "capabilities": [
+      "tools",
+      "json",
+      "reasoning"
+    ]
+  },
+  "zai-org/GLM-5.1": {
+    "kind": "LLM",
+    "placement": "internal",
+    "capabilities": [
+      "tools",
+      "json",
+      "reasoning"
+    ]
+  },
+  "moonshotai/Kimi-K2.6": {
+    "kind": "LLM",
+    "placement": "internal",
+    "capabilities": [
+      "tools",
+      "json",
+      "reasoning",
+      "vision"
+    ]
+  },
+  "Qwen/Qwen3.5-397B-A17B": {
+    "kind": "LLM",
+    "placement": "internal",
+    "capabilities": [
+      "tools",
+      "json",
+      "reasoning",
+      "vision"
+    ]
+  },
+  "Qwen/Qwen3.6-35B-A3B": {
+    "kind": "LLM",
+    "placement": "internal",
+    "capabilities": [
+      "tools",
+      "json",
+      "reasoning",
+      "vision"
+    ]
+  },
+  "GigaChat/GigaChat-2-Max": {
+    "kind": "LLM",
+    "placement": "internal",
+    "capabilities": []
+  },
+  "BAAI/bge-m3": {
+    "kind": "Embedding",
+    "placement": "internal",
+    "capabilities": [
+      "vision"
+    ]
+  },
+  "Qwen/Qwen3-Embedding-0.6B": {
+    "kind": "Embedding",
+    "placement": "internal",
+    "capabilities": [
+      "vision"
+    ]
+  },
+  "Qwen/Qwen3-VL-Embedding-2B": {
+    "kind": "Embedding",
+    "placement": "internal",
+    "capabilities": [
+      "vision"
+    ]
+  },
+  "Qwen/Qwen3-VL-Embedding-8B": {
+    "kind": "Embedding",
+    "placement": "internal",
+    "capabilities": [
+      "vision"
+    ]
+  },
+  "BAAI/bge-reranker-v2-m3": {
+    "kind": "Reranker",
+    "placement": "internal",
+    "capabilities": []
+  },
+  "Qwen/Qwen3-Reranker-0.6B": {
+    "kind": "Reranker",
+    "placement": "internal",
+    "capabilities": []
+  },
+  "Qwen/Qwen3-VL-Reranker-2B": {
+    "kind": "Reranker",
+    "placement": "internal",
+    "capabilities": [
+      "vision"
+    ]
+  },
+  "Qwen/Qwen3-VL-Reranker-8B": {
+    "kind": "Reranker",
+    "placement": "internal",
+    "capabilities": [
+      "vision"
+    ]
+  },
+  "deepseek-ai/DeepSeek-OCR-2": {
+    "kind": "OCR",
+    "placement": "internal",
+    "capabilities": []
+  },
+  "openai/whisper-large-v3": {
+    "kind": "Audio-to-Text",
+    "placement": "internal",
+    "capabilities": []
+  },
+  "anthropic/claude-haiku-4.5": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "anthropic/claude-opus-4.1": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "anthropic/claude-opus-4.5": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "anthropic/claude-opus-4.6": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "anthropic/claude-opus-4.7": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "anthropic/claude-opus-4.8": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "anthropic/claude-sonnet-4": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "anthropic/claude-sonnet-4.5": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "anthropic/claude-sonnet-4.6": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "deepseek/deepseek-v3.2-speciale": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "deepseek/deepseek-v3.2": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "deepseek/deepseek-chat-v3-0324": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "deepseek/deepseek-r1-distill-llama-70b": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "deepseek-ai/DeepSeek-V3": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "google/gemini-2.5-flash": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "google/gemini-2.5-flash-image": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "google/gemini-2.5-pro": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "google/gemini-3-flash-preview": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "google/gemini-3-pro-image-preview": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "google/gemini-3.1-flash-image-preview": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "google/gemini-3.1-flash-lite": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "meituan-longcat/LongCat-Flash-Chat": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "meta-llama/llama-3.3-70b-instruct": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "moonshotai/kimi-k2.5": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "moonshotai/kimi-k2-thinking": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "moonshotai/kimi-k2-0905": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "openai/chatgpt-4o-latest": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "openai/gpt-4.1": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "openai/gpt-4.1-mini": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "openai/gpt-4.1-nano": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "openai/gpt-4o-mini": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "openai/gpt-5": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "openai/gpt-5-chat": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "openai/gpt-5-mini": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "openai/gpt-5-nano": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "openai/gpt-5.1": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "openai/gpt-5.1-chat": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "openai/gpt-5.2": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "openai/gpt-5.2-chat": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "openai/gpt-5.2-codex": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "openai/gpt-5.3-chat": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "openai/gpt-5.3-codex": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "openai/gpt-5.4": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "openai/gpt-5.4-mini": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "openai/gpt-5.4-nano": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "openai/gpt-5.4-pro": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "openai/gpt-5.5": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "openai/gpt-5.5-pro": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "openai/gpt-oss-20b": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "openai/o3-deep-research": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "qwen/qwen3-235b-a22b": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "qwen/qwen3-vl-235b-a22b-instruct": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "qwen/qwen3-vl-235b-a22b-thinking": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "qwen/qwen3-vl-30b-a3b-instruct": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "qwen/qwen3-vl-8b-instruct": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "xiaomi/mimo-v2.5": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "xiaomi/mimo-v2.5-pro": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "z-ai/glm-4.5-air": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "z-ai/glm-4.6": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "z-ai/glm-4.6v": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json"
+    ]
+  },
+  "deepseek-ai/DeepSeek-V3.1-Terminus": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json",
+      "reasoning"
+    ]
+  },
+  "deepseek-ai/DeepSeek-V4-Flash": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json",
+      "reasoning"
+    ]
+  },
+  "deepseek-ai/DeepSeek-R1-0528": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json",
+      "reasoning"
+    ]
+  },
+  "qwen/qwen3-max-thinking": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json",
+      "reasoning"
+    ]
+  },
+  "qwen/qwen3-vl-30b-a3b-thinking": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json",
+      "reasoning"
+    ]
+  },
+  "qwen/qwen3-vl-8b-thinking": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json",
+      "reasoning"
+    ]
+  },
+  "Qwen/Qwen3-30B-A3B": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json",
+      "reasoning"
+    ]
+  },
+  "Qwen/Qwen3-32B": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json",
+      "reasoning"
+    ]
+  },
+  "z-ai/glm-5": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json",
+      "reasoning"
+    ]
+  },
+  "zai-org/GLM-5.2": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json",
+      "reasoning"
+    ]
+  },
+  "google/gemini-3.1-pro-preview": {
+    "kind": "LLM",
+    "placement": "external",
+    "capabilities": [
+      "tools",
+      "json",
+      "reasoning",
+      "vision"
+    ]
+  },
+  "google/gemini-embedding-001": {
+    "kind": "Embedding",
+    "placement": "external",
+    "capabilities": []
+  },
+  "openai/text-embedding-3-large": {
+    "kind": "Embedding",
+    "placement": "external",
+    "capabilities": []
+  },
+  "openai/text-embedding-3-small": {
+    "kind": "Embedding",
+    "placement": "external",
+    "capabilities": []
+  }
+}

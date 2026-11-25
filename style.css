@@ -313,3 +313,5 @@ body.settings-open #layout{display:none}
 .api-stats dt{color:var(--muted);font-size:12px}
 .api-stats dd{margin:0;font:500 25px var(--numbers);font-variant-numeric:tabular-nums}
 @media(max-width:600px){.api-stats{grid-template-columns:repeat(2,minmax(0,1fr))}#cloud-key-form{grid-template-columns:1fr}}
+
+.cloud-chat-controls{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:11px;color:var(--muted)}.cloud-chat-controls label{display:flex;gap:5px;align-items:center}.cloud-chat-controls input{width:auto}.cloud-chat-controls select{max-width:100%}#cloud-history{max-height:340px;overflow:auto;font-size:12px}#memory-results{font-size:13px}
