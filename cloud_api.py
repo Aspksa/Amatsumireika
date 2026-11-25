@@ -77,7 +77,7 @@ def public_state(db, path):
             "model":row["model"], "models":json.loads(row["models"]), "status":status, "checked":row["checked"],
             "requests":row["requests"], "successes":row["successes"], "failures":row["failures"],
             "input_tokens":row["input_tokens"], "output_tokens":row["output_tokens"],
-            "generation_requests":row["generation_requests"], "generation_enabled":False}
+            "generation_requests":row["generation_requests"], "generation_enabled":bool(key and row["model"]), "capabilities":[__import__("gateway").classify(m) for m in json.loads(row["models"])]}
 
 def state(path):
     with LOCK, closing(connect(path)) as db:

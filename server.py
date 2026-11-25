@@ -1,6 +1,7 @@
 """Local-only atlas API and static frontend; no third-party Python packages."""
 import argparse
 import cloud_api
+import gateway
 import logging
 import secrets
 import math
@@ -476,6 +477,12 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(200,{"app":"Amatsumireika","instance":self.server.instance,"ready":True})
         elif path=="/api/cloud/settings":
             self.reply(200,cloud_api.state(DB))
+        elif path=="/api/cloud/history":
+            self.reply(200,gateway.history(DB))
+        elif path=="/api/cloud/job":
+            self.reply(200,gateway.status(DB,parse_qs(urlsplit(self.path).query).get("id",[""])[0]))
+        elif path=="/api/cloud/memory":
+            self.reply(200,gateway.search(DB,parse_qs(urlsplit(self.path).query).get("q",[""])[0][:3000]))
         elif path=="/api/atlas":
             self.reply(200,snapshot())
         elif path=="/api/calendar":
@@ -524,6 +531,9 @@ class Handler(BaseHTTPRequestHandler):
             data=json.loads(self.rfile.read(n))
             if not isinstance(data,dict):
                 raise ValueError("Expected object")
+            if self.path=="/api/cloud/generate":
+                self.reply(202,gateway.submit(DB,data))
+                return
             if self.path=="/api/cloud/settings":
                 self.reply(200,cloud_api.save(DB,data))
                 return
@@ -575,6 +585,7 @@ def main():
     parser.add_argument("--port",type=int,default=0)
     args=parser.parse_args()
     initialize()
+    gateway.recover(DB)
     load_bundled_calendars()
     logging.basicConfig(level=logging.INFO,format="%(levelname)s %(message)s")
     with LocalServer(("127.0.0.1",args.port),Handler) as server:
