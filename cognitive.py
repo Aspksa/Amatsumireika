@@ -33,7 +33,7 @@ def plan(text):
     steps={"repair":["Воспроизвести проблему","Проверить журнал и условия","Проверить исправление"],"search":["Уточнить запрос","Найти локальные совпадения","Проверить источники"],"learn":["Определить тему","Разобрать примеры","Проверить понимание"],"calculate":["Уточнить единицы и входные данные","Рассчитать","Проверить результат"]}.get(kind,["Определить цель","Разделить задачу на проверяемые шаги","Проверить результат"])
     return {"intent":kind,"steps":steps,"executed":False}
 def init(db):
-    if memory.table(db,"cog_aliases"): return
+    if memory.table(db,"cog_aliases") and memory.table(db,"cog_indexed"): return
     db.executescript("""
     CREATE TABLE IF NOT EXISTS cog_state(id INTEGER PRIMARY KEY CHECK(id=1), enabled INTEGER NOT NULL DEFAULT 1, last_cycle TEXT, cycles INTEGER NOT NULL DEFAULT 0, last_intent TEXT NOT NULL DEFAULT '', last_error TEXT NOT NULL DEFAULT '', style TEXT NOT NULL DEFAULT 'Сдержанный');
     INSERT OR IGNORE INTO cog_state(id) VALUES(1);
@@ -49,6 +49,9 @@ def init(db):
     CREATE TABLE IF NOT EXISTS cog_goals(id INTEGER PRIMARY KEY, code TEXT UNIQUE, title TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'suggested');
     CREATE TABLE IF NOT EXISTS cog_aliases(alias_id INTEGER PRIMARY KEY REFERENCES nodes(id), canonical_id INTEGER NOT NULL REFERENCES nodes(id), CHECK(alias_id<>canonical_id));
     CREATE INDEX IF NOT EXISTS cog_relations_kind ON cog_relations(kind,state,source,target);
+    CREATE TABLE IF NOT EXISTS cog_indexed(node_id INTEGER PRIMARY KEY REFERENCES nodes(id));
+    CREATE TABLE IF NOT EXISTS cog_terms(term TEXT NOT NULL,node_id INTEGER NOT NULL REFERENCES nodes(id),PRIMARY KEY(term,node_id));
+    CREATE INDEX IF NOT EXISTS cog_terms_node ON cog_terms(node_id);
     """)
 def connect(path):
     db=sqlite3.connect(path,timeout=5)
@@ -109,23 +112,30 @@ def cycle(path,force=False):
                     k=next((k for k,v in TYPES.items() if v==row["category"]),"fact")
                     db.execute("INSERT OR IGNORE INTO cog_memory(node_id,kind,subject,fingerprint,source,at,confidence,priority) VALUES(?,?,?,?,?,?,?,?)",(row["id"],k,subject_of(row["title"],k),digest(k+"\0"+row["title"]),"manual",row["created_at"] or now(),.7,2))
                 processed+=len(records)
-                # Suggestions, not destructive consolidation. Limit comparisons to recent approved records.
-                for row in records:
-                    others=db.execute("SELECT id,title,category FROM nodes WHERE id<>? AND category=? AND memory_norm(title)=? ORDER BY id LIMIT 100",(row["id"],row["category"],norm(row["title"]))).fetchall()
-                    others+=db.execute("SELECT id,title,category FROM nodes WHERE id<>? ORDER BY id DESC LIMIT 100",(row["id"],)).fetchall()
+                # Indexed candidates across all previously processed nodes; bounded by overlap.
+                to_index=db.execute("SELECT id,title,category FROM nodes n WHERE EXISTS(SELECT 1 FROM cog_memory m WHERE m.node_id=n.id) AND NOT EXISTS(SELECT 1 FROM cog_indexed i WHERE i.node_id=n.id) ORDER BY id LIMIT ?",(BATCH,)).fetchall()
+                for row in to_index:
+                    db.execute("INSERT OR IGNORE INTO cog_indexed VALUES(?)",(row["id"],))
+                    if safe(row["title"]):
+                        db.executemany("INSERT OR IGNORE INTO cog_terms VALUES(?,?)",((w,row["id"]) for w in sorted(terms(row["title"]))))
+                for row in to_index:
+                    if not safe(row["title"]): continue
+                    others=db.execute("SELECT n.id,n.title,n.category FROM nodes n JOIN cog_memory m ON m.node_id=n.id WHERE m.fingerprint=(SELECT fingerprint FROM cog_memory WHERE node_id=?) AND n.id<>? ORDER BY n.id LIMIT 100",(row["id"],row["id"])).fetchall()
+                    others+=db.execute("SELECT n.id,n.title,n.category FROM cog_terms t JOIN cog_terms u ON u.term=t.term JOIN nodes n ON n.id=u.node_id WHERE t.node_id=? AND u.node_id<>? GROUP BY n.id ORDER BY COUNT(*) DESC,n.id LIMIT 100",(row["id"],row["id"])).fetchall()
                     for other in others:
-                        if not safe(row["title"]) or not safe(other["title"]): continue
+                        if not safe(other["title"]): continue
                         sim=similarity(row["title"],other["title"])
-                        if sim>=.6 or (row["category"]==other["category"] and norm(row["title"])==norm(other["title"])):
+                        exact=row["category"]==other["category"] and norm(row["title"])==norm(other["title"])
+                        if sim>=.6 or exact:
                             a,b=sorted((row["id"],other["id"]))
-                            kind="duplicate" if row["category"]==other["category"] and norm(row["title"])==norm(other["title"]) else "association"
+                            kind="duplicate" if exact else "association"
                             if db.execute("INSERT OR IGNORE INTO cog_relations(source,target,kind,evidence) VALUES(?,?,?,?)",(a,b,kind,"Совпадение слов: %.2f"%sim)).rowcount: emit(db,"relation","Предложена "+kind,a)
                 pending=db.execute("SELECT COUNT(*) FROM cog_candidates WHERE state='pending'").fetchone()[0]
                 if pending: db.execute("INSERT INTO cog_goals(code,title) VALUES('review','Проверить кандидатов памяти') ON CONFLICT(code) DO UPDATE SET state='suggested'")
                 else: db.execute("UPDATE cog_goals SET state='done' WHERE code='review'")
                 if db.execute("SELECT 1 FROM cog_skills WHERE failures>0").fetchone(): db.execute("INSERT OR IGNORE INTO cog_goals(code,title) VALUES('errors','Разобрать неудачные операции и журнал')")
                 db.execute("UPDATE cog_state SET last_cycle=?,cycles=cycles+1,last_error='' WHERE id=1",(now(),))
-                emit(db,"cycle","Локальный цикл: %d объектов, %d мс"%(processed,round((time.monotonic()-started)*1000)))
+                if processed or to_index: emit(db,"cycle","Локальный цикл: %d объектов, %d мс"%(processed,round((time.monotonic()-started)*1000)))
                 # Bound activity log only; never delete knowledge, feedback or source records.
                 db.execute("DELETE FROM cog_events WHERE id < (SELECT COALESCE(MAX(id),0)-500 FROM cog_events)")
                 return {"processed":processed}

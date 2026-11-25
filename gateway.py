@@ -224,7 +224,7 @@ def run_job(path,ident,key,model,prompt,mode):
             with closing(db_open(path)) as db, db:
                 db.execute("UPDATE cloud_jobs SET status=?,finished=?,answer=?,error=?,input_tokens=?,output_tokens=?,latency_ms=?,tool_result=? WHERE id=?",(outcome,now(),answer,error,*usage,round((time.monotonic()-start)*1000),tool_result,ident))
                 budget.settle(db,ident,*usage)
-                db.execute("UPDATE cloud_config SET successes=successes+?,failures=failures+?,input_tokens=input_tokens+?,output_tokens=output_tokens+?,status=? WHERE id=1",(int(outcome=="done"),int(outcome!="done"),usage[0] or 0,usage[1] or 0,"connected" if outcome=="done" else error))
+                db.execute("UPDATE cloud_config SET successes=successes+?,failures=failures+?,input_tokens=input_tokens+?,output_tokens=output_tokens+?,status=?,checked=? WHERE id=1",(int(outcome=="done"),int(outcome!="done"),usage[0] or 0,usage[1] or 0,"connected" if outcome=="done" else error,now()))
         finally:
             ACTIVE.release()
 

@@ -106,6 +106,11 @@ async function main(){
   await until(()=>evaluate('!document.querySelector("#project-settings-page").hidden && document.querySelector("#cloud-requests").textContent==="0"'),"local API settings");
   assert.equal(await evaluate('document.querySelector("#cloud-key").type'),"password");
   assert.equal(await evaluate('document.querySelector("#cloud-refresh").disabled'),true);
+  await evaluate('document.querySelector("#settings-cognitive-tab").click()');
+  await until(()=>evaluate('document.querySelector("#cog-persona").textContent.includes("кицунэ")'),"cognitive settings");
+  assert.equal(await evaluate('document.querySelector("#settings-api-content").hidden'),true);
+  assert.equal(await evaluate('document.querySelector("#settings-cognitive-content").hidden'),false);
+  assert.deepEqual(errors,[]);
   await evaluate('document.querySelector("#settings-back").click()');
   assert.equal(await evaluate('document.querySelector("#project-settings-page").hidden'),true);
   await evaluate('document.querySelector("#atlas").click()');await delay(200);await evaluate('Array.from(document.querySelectorAll(".swatch")).find(b=>b.textContent.includes("Бумага")).click()');await evaluate('document.querySelector("#home").click()');await delay(350);
