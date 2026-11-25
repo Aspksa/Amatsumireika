@@ -39,6 +39,21 @@ class AtlasTest(unittest.TestCase):
         server.initialize()
         self.assertEqual(server.snapshot()["nodes"][0]["folder"],"")
 
+    def test_visual_settings_and_events(self):
+        self.assertEqual(server.get_settings(),{})
+        saved=server.save_settings({"palette":"Океан","speed":1.2,"showLabels":False})
+        server.initialize()
+        self.assertEqual(server.get_settings(),saved)
+        with self.assertRaises(ValueError):
+            server.save_settings({"speed":float("nan")})
+        with self.assertRaises(ValueError):
+            server.save_settings({"showLabels":"yes"})
+        a=server.add_node("A","Знания")
+        b=server.add_node("B","Опыт")
+        server.add_edge(a,b)
+        server.add_edge(a,b)
+        self.assertEqual([e["kind"] for e in server.get_events()],["edge","node","node","settings"])
+
     def test_invalid(self):
         with self.assertRaises(ValueError):
             server.add_node("","Знания")
