@@ -331,11 +331,11 @@ function timeGeometry(shape:TimeShape,y:number,m:number|null):TimeRay[]{
  if(timeGeometryCache.size>=32)timeGeometryCache.delete(timeGeometryCache.keys().next().value!);timeGeometryCache.set(k,result);return result
 }
 function interpolatedRays(y:number,nowMono:number){
- const end=timeGeometry(timeShape,y,detailMonth),t=reduced?1:eased((nowMono-morphAt)/800);if(t>=1)return end;
+ const end=timeGeometry(timeShape,y,detailMonth),t=cinemaMotion()?eased((nowMono-morphAt)/800):1;if(t>=1)return end;
  const start=timeGeometry(oldShape,y,detailMonth);return end.map((v,i)=>({...v,p:{x:start[i].p.x+(v.p.x-start[i].p.x)*t,y:start[i].p.y+(v.p.y-start[i].p.y)*t},q:{x:start[i].q.x+(v.q.x-start[i].q.x)*t,y:start[i].q.y+(v.q.y-start[i].q.y)*t}}))
 }
-function setTimeShape(shape:TimeShape){if(!timeShapes.includes(shape)||shape===timeShape)return;cinemaRevealAt=performance.now();wakeCinema();oldShape=timeShape;timeShape=shape;morphAt=performance.now();$<HTMLSelectElement>("time-shape").value=shape;drawYear();if(!reduced)requestAnimationFrame(timeMorph)}
-function timeMorph(){drawYear();if(performance.now()-morphAt<800&&!reduced)requestAnimationFrame(timeMorph)}
+function setTimeShape(shape:TimeShape){if(!timeShapes.includes(shape)||shape===timeShape)return;cinemaRevealAt=performance.now();wakeCinema();oldShape=timeShape;timeShape=shape;morphAt=performance.now();$<HTMLSelectElement>("time-shape").value=shape;drawYear();const serial=++cinemaMorphSerial;if(cinemaMotion())requestAnimationFrame(()=>timeMorph(serial))}
+function timeMorph(serial:number){if(serial!==cinemaMorphSerial||!cinemaOnscreen())return;drawYear();if(performance.now()-morphAt<800&&cinemaMotion())requestAnimationFrame(()=>timeMorph(serial))}
 function timeDayAt(x:number,y:number,year:number){const rays=interpolatedRays(year,performance.now());let best:Date|null=null,dist=Infinity;for(const v of rays){const dx=v.q.x-v.p.x,dy=v.q.y-v.p.y,t=Math.max(0,Math.min(1,((x-v.p.x)*dx+(y-v.p.y)*dy)/(dx*dx+dy*dy||1))),d=Math.hypot(x-v.p.x-t*dx,y-v.p.y-t*dy);if(d<dist){dist=d;best=v.d}}return dist<20?best:null}
 function drawAlternate(now:Date,y:number,c:CanvasRenderingContext2D,base:string,gold:string){
  const reference=dayKey(timeReference(now)),rays=interpolatedRays(y,performance.now());
@@ -348,11 +348,11 @@ function drawAlternate(now:Date,y:number,c:CanvasRenderingContext2D,base:string,
  c.globalAlpha=1;
  if(timeShape==="years"){for(let offset=-2;offset<=2;offset++){if(offset===0)continue;const yy=y+offset,rr=104+offset*17;c.strokeStyle=base;c.lineWidth=2;c.beginPath();c.arc(160,160,rr,0,tau);c.stroke();c.strokeStyle=gold;c.lineWidth=.8;c.beginPath();c.arc(160,160,rr,-Math.PI/2,-Math.PI/2+tau*elapsedDays(yy,now)/geometryDates(yy).length);c.stroke();c.font="8px "+mono;c.textAlign="center";c.fillStyle=gold;c.fillText(String(yy),160,160-rr+7)}}else if(detailMonth===null){for(let m=0;m<12;m++){const ds=geometryDates(y),i=ds.findIndex(d=>d.getMonth()===m)+Math.floor(new Date(y,m+1,0).getDate()/2),q=timePoint(-Math.PI/2+tau*(i+.5)/ds.length,151);c.font="8px "+mono;c.textAlign="center";c.fillStyle=base==="#273a45"?"#9db1be":"#52646c";c.fillText(monthNames[m],q.x,q.y)}}
 }
-function signalTime(){timePulse=performance.now();cinemaBurst(160,160,24,65,1);wakeCinema();$("stage").classList.remove("time-signal");if(!reduced){void $("stage").offsetWidth;$("stage").classList.add("time-signal")}timeWindowKey="";if(timeDataReady)void refreshTimeWindow()}
+function signalTime(){timePulse=performance.now();cinemaBurst(160,160,24,65,1);wakeCinema();$("stage").classList.remove("time-signal");if(cinemaMotion()){void $("stage").offsetWidth;$("stage").classList.add("time-signal")}timeWindowKey="";if(timeDataReady)void refreshTimeWindow()}
 function historySelect(value:string|null){playbackRunning=false;historyDate=value;if(value){const d=new Date(value+"T12:00:00");if(!Number.isFinite(d.getTime())){historyDate=null;return}autoYear=false;calendarYear=d.getFullYear();detailMonth=null;daySelected=value}else chooseCalendarYear(null);renderCalendar()}
-function startTimePlayback(kind:"year"|"events",reverse=false){playbackKind=kind;cinemaReverse=reverse;playbackDays=kind==="year"?geometryDates(displayedYear(new Date())).map(dayKey):timeEventDates.slice();if(!playbackDays.length){text($("time-history-status"),"Нет дат для воспроизведения");return}if(reverse)playbackDays.reverse();playbackAt=performance.now();playbackRunning=true;historyDate=playbackDays[0];const serial=++playbackSerial;requestAnimationFrame(n=>playTime(n,serial))}
+function startTimePlayback(kind:"year"|"events",reverse=false){playbackRunning=false;playbackSerial++;playbackKind=kind;cinemaReverse=reverse;playbackDays=kind==="year"?geometryDates(displayedYear(new Date())).map(dayKey):timeEventDates.slice();if(!playbackDays.length){text($("time-history-status"),"Нет дат для воспроизведения");return}if(reverse)playbackDays.reverse();playbackAt=performance.now();playbackRunning=true;historyDate=playbackDays[0];const serial=++playbackSerial;requestAnimationFrame(n=>playTime(n,serial))}
 function playTime(now:number,serial=playbackSerial){if(!playbackRunning||serial!==playbackSerial)return;const i=Math.min(playbackDays.length-1,Math.floor((now-playbackAt)/Math.max(65,14000/playbackDays.length)));historyDate=playbackDays[i];daySelected=historyDate;calendarYear=Number(historyDate.slice(0,4));autoYear=false;detailMonth=null;drawYear();text($("time-history-status"),"Просмотр "+historyDate);if(i+1>=playbackDays.length){playbackRunning=false;renderCalendar()}else requestAnimationFrame(n=>playTime(n,serial))}
-function stopTimePlayback(){playbackRunning=false;historyDate=null;chooseCalendarYear(null)}
+function stopTimePlayback(){playbackRunning=false;playbackSerial++;historyDate=null;chooseCalendarYear(null)}
 // Cinematic layer. Date geometry remains authoritative and hit targets never move.
 type CinemaMode="auto"|"cinema"|"quiet"|"off";
 type Spark={x:number;y:number;vx:number;vy:number;life:number;max:number;size:number;hue:number};
@@ -361,6 +361,10 @@ let cinemaCost=0,cinemaFrames=0,cinemaSlow=0,cinemaFast=0,cinemaTick=0,cinemaClo
 let cinemaMonthAt=-100000,cinemaQuarterAt=-100000,cinemaRevealAt=-100000,cinemaYearAt=-100000,cinemaBirthAt=-100000;
 let cinemaPreviousYear=0,cinemaPreviousDate="",cinemaReverse=false,playbackSerial=0,cinemaLastDate="";
 let cinemaPointer:Point={x:0,y:0};
+let cinemaDigitEls:HTMLElement[]=[],cinemaMorphSerial=0;
+function cinemaMotion(){return !reduced&&cinemaMode!=="off"&&cinemaPower>0}
+function cinemaQuiet(hour:number){return cinemaMode==="quiet"||(cinemaMode==="auto"&&(hour<6||hour>=23))}
+
 const cinemaSparks:Spark[]=[],cinemaSprites=new Map<string,HTMLCanvasElement>();
 const cinemaColors=["#eac275","#42c9af","#a78add","#78a5e6","#fff1c9"];
 function cinemaClamp(v:number,min:number,max:number){return Math.max(min,Math.min(max,v))}
@@ -373,7 +377,7 @@ function cinemaColor(hour:number){const h=hour%24;return h<6?mixHex("#8499d3","#
 function cinemaSprite(color:string){let sprite=cinemaSprites.get(color);if(sprite)return sprite;sprite=document.createElement("canvas");sprite.width=48;sprite.height=48;const c=sprite.getContext("2d");if(!c)return sprite;const g=c.createRadialGradient(24,24,0,24,24,24);g.addColorStop(0,color);g.addColorStop(.25,color+"96");g.addColorStop(1,color+"00");c.fillStyle=g;c.fillRect(0,0,48,48);if(cinemaSprites.size>=16)cinemaSprites.delete(cinemaSprites.keys().next().value!);cinemaSprites.set(color,sprite);return sprite}
 function cinemaGlow(c:CanvasRenderingContext2D,x:number,y:number,r:number,color:string,alpha:number){c.globalAlpha=cinemaClamp(alpha,0,1);c.drawImage(cinemaSprite(color),x-r,y-r,r*2,r*2);c.globalAlpha=1}
 function cinemaBurst(x:number,y:number,count:number,force:number,hue=0){
- if(reduced||cinemaMode==="off")return;
+ if(!cinemaMotion()||!cinemaOnscreen())return;
  for(let i=0;i<count&&cinemaSparks.length<180;i++){const a=i*2.399963+cinemaTick*.013,v=force*(.4+.6*((i*17%23)/23)),life=.55+(i%9)*.1;cinemaSparks.push({x,y,vx:Math.cos(a)*v,vy:Math.sin(a)*v,life,max:life,size:.6+(i%4)*.3,hue})}
 }
 function stepCinemaParticle(p:Spark,dt:number,target:Point){const t=cinemaClamp(dt,0,.05),dx=target.x-p.x,dy=target.y-p.y,r=Math.max(12,Math.hypot(dx,dy)),a=16/(1+r*.04);p.vx=(p.vx+dx/r*a*t)*Math.exp(-.65*t);p.vy=(p.vy+dy/r*a*t)*Math.exp(-.65*t);p.x+=p.vx*t;p.y+=p.vy*t;p.life-=t;return p.life>0}
@@ -387,7 +391,7 @@ function cinemaLine(c:CanvasRenderingContext2D,a:Point,b:Point,col:string,w:numb
 function cinemaYearTransition(c:CanvasRenderingContext2D,now:number,power:number){
  const f=(now-cinemaYearAt)/2400;if(f<0||f>=1)return;
  const t=eased(f),inward=f<.5?1-eased(f*2):eased((f-.5)*2);
- for(let i=0;i<48;i++){const a=i*tau/48+t*2.5,rad=8+inward*(110+i%8*2),q=timePoint(a,rad);cinemaGlow(c,q.x,q.y,3+(i%3),cinemaColors[i%3],(1-f)*power*.6)}
+ for(let i=0;i<48;i++){const a=i*tau/48+t*2.5+(cinemaPreviousYear%17)*.04,rad=8+inward*(110+i%8*2),q=timePoint(a,rad);cinemaGlow(c,q.x,q.y,3+(i%3),cinemaColors[i%3],(1-f)*power*.6)}
  cinemaRing(c,8+inward*125,0,tau,"#bfa0e8",2,Math.sin(f*Math.PI)*power);
  if(f>.5)cinemaRing(c,8+eased((f-.5)*2)*132,0,tau,"#eac275",1.1,(1-f)*power);
 }
@@ -401,7 +405,7 @@ function cinemaDraw(c:CanvasRenderingContext2D,now:number,d:Date,dt:number,budge
  const secPoint=timePoint(angle,56);c.fillStyle=warm;c.beginPath();c.arc(secPoint.x,secPoint.y,1.8,0,tau);c.fill();
  if(budget.count===0||power===0)return;
  cinemaPointer.x+=(timeCursor.x-cinemaPointer.x)*Math.min(1,dt*9);cinemaPointer.y+=(timeCursor.y-cinemaPointer.y)*Math.min(1,dt*9);
- const y=displayedYear(d),rays=timeGeometry(timeShape,y,detailMonth),ref=dayKey(timeReference(d));
+ const y=displayedYear(d),rays=interpolatedRays(y,now),ref=dayKey(timeReference(d));
  const index=rays.findIndex(v=>dayKey(v.d)===ref),target=index>=0?rays[index].q:secPoint;
  const breath=.8+.2*Math.sin(phase*.85);
  cinemaGlow(c,secPoint.x,secPoint.y,8,warm,.7*power);
@@ -437,7 +441,7 @@ function cinemaOnscreen(){return cinemaVisible&&!expanded&&!presentation&&docume
 function wakeCinema(){if(!cinemaPending&&timeOverlayCtx&&cinemaOnscreen()){cinemaPending=true;requestAnimationFrame(overlayFrame)}}
 function overlayFrame(now:number){
  cinemaPending=false;if(!timeOverlay||!timeOverlayCtx||!cinemaOnscreen())return;
- const d=new Date(),budget=cinemaBudget(cinemaMode,d.getHours(),cinemaTier,reduced);
+ const d=new Date(),budget=cinemaBudget(cinemaPower===0?"off":cinemaMode,d.getHours(),cinemaTier,reduced);
  if(now-timeLast<1000/budget.fps-.8){wakeCinema();return}
  const start=performance.now(),dt=timeLast?Math.min(.05,(now-timeLast)/1000):1/60;timeLast=now;cinemaTick++;
  const c=timeOverlayCtx,sz=wheel.width;if(timeOverlay.width!==sz)timeOverlay.width=sz;if(timeOverlay.height!==sz)timeOverlay.height=sz;
@@ -447,22 +451,25 @@ function overlayFrame(now:number){
  if(cinemaCost>10){cinemaSlow++;cinemaFast=0}else if(cinemaCost<4){cinemaFast++;cinemaSlow=0}else{cinemaFast=0;cinemaSlow=0}
  if(cinemaSlow>=30){cinemaTier=Math.max(0,cinemaTier-1);cinemaSlow=0}
  if(cinemaFast>=180){cinemaTier=Math.min(2,cinemaTier+1);cinemaFast=0}
- if(cinemaFrames%60===0)text($("time-performance"),"Canvas "+cinemaCost.toFixed(1)+" мс · цель "+budget.fps+" FPS · "+cinemaSparks.length+" частиц");
+ if(cinemaFrames%60===0||budget.fps===1)text($("time-performance"),"Canvas "+cinemaCost.toFixed(1)+" мс · цель "+budget.fps+" FPS · "+cinemaSparks.length+" частиц");
  if(budget.fps>1)wakeCinema();
 }
 function cinemaDigits(now:Date){
  const value=now.toLocaleTimeString("ru-RU"),root=$("clock");
  if(value===cinemaClockText)return;
- const old=cinemaClockText;cinemaClockText=value;root.setAttribute("aria-label",value);root.replaceChildren();
- for(let i=0;i<value.length;i++){const ch=value[i],s=document.createElement("span");s.className=ch===":"?"cinema-colon":"cinema-digit";text(s,ch);s.setAttribute("aria-hidden","true");if(ch!==old[i]&&!reduced&&cinemaMode!=="off"&&cinemaMode!=="quiet"){s.classList.add("digit-arrive");if(old[i]&&old[i]!==":"){s.setAttribute("data-old",old[i]);if(i>=value.length-2&&cinemaOnscreen())cinemaBurst(160+(i-3.5)*10,152,3,20,0)}}root.append(s)}
- cinemaSecondAt=performance.now();if(cinemaMode==="off"||reduced)wakeCinema();
+ const old=cinemaClockText;cinemaClockText=value;root.setAttribute("aria-label",value);
+ if(cinemaDigitEls.length!==value.length){root.replaceChildren();cinemaDigitEls=[];for(const ch of value){const s=document.createElement("span");s.className=ch===":"?"cinema-colon":"cinema-digit";s.setAttribute("aria-hidden","true");root.append(s);cinemaDigitEls.push(s)}}
+ const quiet=cinemaQuiet(now.getHours());$("left").setAttribute("data-night",String(quiet));
+ for(let i=0;i<value.length;i++){const ch=value[i],s=cinemaDigitEls[i];if(ch===old[i]&&s.textContent===ch)continue;text(s,ch);s.classList.remove("digit-arrive");s.removeAttribute("data-old");
+ if(ch!==":"&&ch!==old[i]&&cinemaMotion()&&!quiet&&cinemaOnscreen()){void s.offsetWidth;s.classList.add("digit-arrive");if(old[i]&&old[i]!==":"){s.setAttribute("data-old",old[i]);if(i>=value.length-2)cinemaBurst(160+(i-3.5)*10,152,3,20,0)}}}
+ cinemaSecondAt=performance.now();wakeCinema();
 }
 function cinemaSettings(){
  const v=$<HTMLSelectElement>("cinema-mode").value;
  if(["auto","cinema","quiet","off"].includes(v))cinemaMode=v as CinemaMode;
  const p=Number($<HTMLInputElement>("cinema-power").value);if(Number.isFinite(p))cinemaPower=cinemaClamp(p/100,0,1);
  $("left").setAttribute("data-cinema",cinemaMode);$("left").style.setProperty("--cinema-intensity",String(cinemaPower));
- if(cinemaMode==="off"){cinemaSparks.length=0;timeLast=0}
+ if(cinemaMode==="off"||cinemaPower===0){cinemaSparks.length=0;timeLast=0;cinemaMorphSerial++;drawYear()}
  try{localStorage.setItem("chrono-cinema-v1",JSON.stringify({mode:cinemaMode,power:cinemaPower}))}catch{}
  wakeCinema();
 }
@@ -471,12 +478,12 @@ function elapsedProduction(year:number,now:Date){const dates=yearDates(year),tot
 function rayLength(i:number,n:number){return 12+57*(i+1)/n}
 function eased(t:number){t=Math.max(0,Math.min(1,t));return t*t*(3-2*t)}
 function mixHex(a:string,b:string,t:number){const x=parseInt(a.slice(1),16),y=parseInt(b.slice(1),16);return "#"+[16,8,0].map(k=>Math.round(((x>>k)&255)*(1-t)+((y>>k)&255)*t).toString(16).padStart(2,"0")).join("")}
-function animateBirth(now:Date){birthAt=performance.now();birthKey=dayKey(now);if(reduced||calendarAnim)return;calendarAnim=true;const tick=()=>{drawYear(new Date());if(performance.now()-birthAt<1400)requestAnimationFrame(tick);else calendarAnim=false};requestAnimationFrame(tick)}
+function animateBirth(now:Date){birthAt=performance.now();birthKey=dayKey(now);if(!cinemaMotion()||calendarAnim||!cinemaOnscreen())return;calendarAnim=true;const tick=()=>{drawYear(new Date());if(performance.now()-birthAt<1400&&cinemaMotion()&&cinemaOnscreen())requestAnimationFrame(tick);else calendarAnim=false};requestAnimationFrame(tick)}
 const wheel=$<HTMLCanvasElement>("year-wheel"),wheelCtx=wheel.getContext("2d")!;
 function displayedYear(now:Date){return autoYear?now.getFullYear():calendarYear}
 function elapsedDays(year:number,now:Date){const key=dayKey(now);return yearDates(year).filter(d=>dayKey(d)<=key).length}
 function drawYear(now=new Date()){
- const y=displayedYear(now),days=viewDates(y),today=dayKey(timeReference(now)),selected=daySelected;const elapsed=performance.now()-birthAt,birth=!reduced&&elapsed>=0&&elapsed<1400;
+ const y=displayedYear(now),days=viewDates(y),today=dayKey(timeReference(now)),selected=daySelected;const elapsed=performance.now()-birthAt,birth=cinemaMotion()&&elapsed>=0&&elapsed<1400;
  const box=wheel.getBoundingClientRect();const side=Math.max(1,Math.min(box.width,box.height));if(side<=1)return;
  const size=Math.max(1,Math.round(side*Math.min(devicePixelRatio||1,2)));if(wheel.width!==size)wheel.width=size;if(wheel.height!==size)wheel.height=size;
  const c=wheelCtx;c.setTransform(size/320,0,0,size/320,0,0);c.clearRect(0,0,320,320);
@@ -484,7 +491,7 @@ function drawYear(now=new Date()){
  const dark=!paper(),base=dark?"#273a45":"#c9c7bf",ink=dark?"#9db1be":"#52646c",gold=dark?"#eac275":"#987026";
  const point=(angle:number,r:number)=>({x:center+Math.cos(angle)*r,y:center+Math.sin(angle)*r});
  function stroke(a:number,b:number,r:number,color:string,w:number){c.beginPath();c.arc(center,center,r,a,b);c.strokeStyle=color;c.lineWidth=w;c.stroke()}
- if(timeShape!=="spiral"||(!reduced&&performance.now()-morphAt<800)){drawAlternate(now,y,c,base,gold);return}
+ if(timeShape!=="spiral"||(cinemaMotion()&&performance.now()-morphAt<800)){drawAlternate(now,y,c,base,gold);return}
  stroke(0,tau,inner-4,base,.8);stroke(0,tau,inner-10,base,.5);stroke(0,tau,140,base,.5);stroke(0,tau,inner-1,dark?"#142631":"#e4e0d6",2.3);stroke(0,tau,142,base,.3);
  for(let i=0;i<60;i++){const angle=-Math.PI/2+i*tau/60,p=point(angle,inner-9),q=point(angle,inner-(i%5===0?15:12));c.beginPath();c.moveTo(p.x,p.y);c.lineTo(q.x,q.y);c.strokeStyle=i%5===0?gold:base;c.lineWidth=i%5===0?1:.6;c.stroke()}
  for(let i=0;i<days.length;i++){
@@ -580,7 +587,7 @@ try{const saved=JSON.parse(localStorage.getItem("chrono-cinema-v1")??"{}");if(["
 $<HTMLSelectElement>("cinema-mode").value=cinemaMode;$<HTMLInputElement>("cinema-power").value=String(cinemaPower*100);cinemaSettings();
 $("cinema-mode").onchange=cinemaSettings;$("cinema-power").oninput=cinemaSettings;
 $("time-reverse").onclick=()=>startTimePlayback("year",true);
-if(typeof IntersectionObserver!=="undefined"){new IntersectionObserver(entries=>{cinemaVisible=entries.some(e=>e.isIntersecting);if(cinemaVisible)wakeCinema()}).observe(wheel)}
+if(typeof IntersectionObserver!=="undefined"){new IntersectionObserver(entries=>{cinemaVisible=entries.some(e=>e.isIntersecting);if(cinemaVisible){drawYear();wakeCinema()}}).observe(wheel)}
 setInterval(()=>{if(cinemaOnscreen())wakeCinema()},1000);
 wakeCinema();
 timeDataReady=true;void refreshTimeWindow();void renderTimeSnapshots();
