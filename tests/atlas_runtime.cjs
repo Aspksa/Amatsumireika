@@ -80,6 +80,22 @@ assert.equal(monthWeek(new Date(2026,10,1)).count,6);
 assert.equal(calendarRayLength(new Date(2027,0,4)),calendarRayLength(new Date(2027,0,10)));
 for(const v of spiral){const hit=calendarHit(v.q.x-160,v.q.y-160,spiral.map(v=>v.d),false);assert.equal(dayKey(hit.date),dayKey(v.d));assert.equal(hit.month,false)}
 assert.equal(calendarHit(0,0,spiral.map(v=>v.d),false),null);
+for(const y of [2026,2027,2028,2100]){
+ const dates=yearDates(y),labels=Array.from({length:12},(_,m)=>monthLabelLayout(y,m));
+ for(const [m,l] of labels.entries()){
+  assert.ok(l.width>=30,"full month label width: "+l.label+" "+l.width);
+  assert.ok(l.radius>spiralInner+calendarRayLength(new Date(y,m+1,0,12)));
+  for(const along of [l.radius,l.radius+l.width])for(const across of [-7,7]){
+   assert.ok(Math.abs(along*l.ux-across*l.uy)<=annualTimeSide/2-3.9);
+   assert.ok(Math.abs(along*l.uy+across*l.ux)<=annualTimeSide/2-3.9);
+  }
+  const hit=calendarHit((l.radius+l.width/2)*l.ux,(l.radius+l.width/2)*l.uy,dates,false);
+  assert.equal(hit.month,true);assert.equal(hit.date.getMonth(),m);
+ }
+}
+assert.equal(fullMonthNames[11],"Декабрь");assert.equal(fullMonthNames[8],"Сентябрь");
+assert.equal(timePointer(192,116,{left:0,top:0,width:384,height:384},false).y,-76);
+assert.equal(timePointer(160,84,{left:0,top:0,width:320,height:320},true).y,-76);
 selectMonthDate(new Date(2027,0,31,12),new Date(2027,0,1));moveMonth(1,new Date(2027,0,1));assert.equal(daySelected,"2027-02-28");moveMonth(-2,new Date(2027,0,1));assert.equal(daySelected,"2026-12-28");
 assert.equal(cinemaBudget("auto",2,2,false).fps,15);
 assert.equal(cinemaBudget("cinema",12,2,false).fps,60);
