@@ -433,3 +433,19 @@ h2{font:650 var(--type-xs)/1.4 var(--sans);letter-spacing:.08em}
 @keyframes chronoSelectionSettle{from{transform:scale(.85)}to{transform:none}}
 #left[data-cinema="off"] .month-day.ring-arrive::after,#left[data-cinema="quiet"] .month-day.ring-arrive::after{animation:none}
 @media(prefers-reduced-motion:reduce){#left .month-day.ring-arrive::after{animation:none!important}}
+
+/* Chronos 6: expanded fan, contrast-aware labels and spacious date rows. */
+#left[data-time-detail="year"] .chrono-clock{width:28.3%}
+#left[data-time-detail="year"] .chrono-clock #clock{font:400 clamp(12px,7cqw,32px)/1 var(--numbers);letter-spacing:-.045em}
+#left .chrono-clock #clock{font-variant-numeric:tabular-nums lining-nums}
+#left #month-heading{font:650 clamp(17px,6.1cqw,24px)/1.3 var(--numbers);letter-spacing:-.028em}
+#left #month-grid{row-gap:clamp(5px,2.2cqw,10px)}
+#left .month-day{aspect-ratio:1;min-height:0;min-width:0;align-self:center;justify-self:stretch}
+#left .month-day.is-past:not(.is-selected):not(.is-today):not(.kind-holiday):not(.kind-weekend):not(.kind-transfer){opacity:1;color:#9baeb9}
+:root.paper #left .month-day.is-past:not(.is-selected):not(.is-today):not(.kind-holiday):not(.kind-weekend):not(.kind-transfer){color:#586973}
+#left .month-day.is-current-week:not(.is-today):not(.is-selected){background:color-mix(in srgb,var(--chrono-season) 9%,transparent)}
+#left .month-day{transition:color .18s,background-color .18s,transform .18s ease-out}
+@media(hover:hover){#left .month-day:hover{transform:translateY(-1px);background:color-mix(in srgb,var(--chrono-season) 16%,transparent)}}
+#left .month-day.is-today::before{border-radius:50%;aspect-ratio:1;inset:3%;box-sizing:border-box}
+@media(prefers-reduced-motion:reduce){#left .month-day{transition:none;transform:none!important}}
+#left[data-cinema="off"] .month-day,#left[data-cinema="quiet"] .month-day{transition:none;transform:none}

@@ -38,6 +38,9 @@ async function main(){
   assert.ok(a.width>100&&Math.abs(a.width-a.height)<2,"square visible canvas "+JSON.stringify(a));
   assert.ok(a.top>=0&&a.top<25,"wheel top-aligned "+a.top);
   assert.ok(a.clockCenter<3,"clock horizontally centered");
+  assert.ok(await evaluate('(()=>{const h=document.querySelector("#month-heading").textContent;return h[0]===h[0].toUpperCase()})()'));
+  assert.ok(await evaluate('document.querySelectorAll(".month-day.is-current-week").length>=1'));
+  assert.ok(await evaluate('(()=>{const b=document.querySelector(".month-day.is-today").getBoundingClientRect();return Math.abs(b.width-b.height)<2})()'));
   assert.equal(await evaluate('document.querySelector("#time-shape")===null'),true);
   assert.equal(await evaluate('document.querySelector(".chrono-clock").children.length'),1);
   assert.equal(await evaluate('document.querySelector(".chrono-clock").firstElementChild.id'),"clock");
@@ -47,14 +50,14 @@ async function main(){
   assert.equal(await evaluate('getComputedStyle(document.querySelector(".month-day.is-today"),"::before").borderTopStyle'),"solid");
   assert.ok(await evaluate('document.querySelector(".month-calendar").getBoundingClientRect().top-document.querySelector(".chrono-wheel").getBoundingClientRect().bottom>=23'),"calendar below wheel");
   assert.equal(await evaluate('document.querySelector("#spiral-tooltip").hidden'),true);
-  await evaluate('(()=>{const w=document.querySelector("#year-wheel"),r=w.getBoundingClientRect();w.dispatchEvent(new PointerEvent("pointermove",{clientX:r.left+r.width/2,clientY:r.top+r.height*(220-65)/440,bubbles:true}))})()');
+  await evaluate('(()=>{const w=document.querySelector("#year-wheel"),r=w.getBoundingClientRect();w.dispatchEvent(new PointerEvent("pointermove",{clientX:r.left+r.width/2,clientY:r.top+r.height*(240-75)/480,bubbles:true}))})()');
   assert.equal(await evaluate('document.querySelector("#spiral-tooltip").hidden'),false);
   await evaluate('document.querySelector("#year-wheel").dispatchEvent(new PointerEvent("pointerleave"))');
   assert.equal(await evaluate('document.querySelector("#spiral-tooltip").hidden'),true);
   assert.equal(await evaluate('document.querySelector("#left").dataset.timeDetail'),"year");
   const reset=()=>evaluate('document.querySelector("#month-grid").dispatchEvent(new KeyboardEvent("keydown",{key:"Home",bubbles:true}))');
   // December's radial label lies in the added gutter; click it to open month detail.
-  await evaluate(`(()=>{const w=document.querySelector("#year-wheel"),r=w.getBoundingClientRect(),y=new Date().getFullYear(),n=(Date.UTC(y+1,0,1)-Date.UTC(y,0,1))/86400000,a=-Math.PI/2-(n-15.5)*2*Math.PI/n;w.dispatchEvent(new PointerEvent("pointerup",{clientX:r.left+r.width*(.5+190*Math.cos(a)/440),clientY:r.top+r.height*(.5+190*Math.sin(a)/440),bubbles:true}))})()`);
+  await evaluate(`(()=>{const w=document.querySelector("#year-wheel"),r=w.getBoundingClientRect(),y=new Date().getFullYear(),n=(Date.UTC(y+1,0,1)-Date.UTC(y,0,1))/86400000,a=-Math.PI/2-(n-15.5)*2*Math.PI/n;w.dispatchEvent(new PointerEvent("pointerup",{clientX:r.left+r.width*(.5+220*Math.cos(a)/480),clientY:r.top+r.height*(.5+220*Math.sin(a)/480),bubbles:true}))})()`);
   assert.equal(await evaluate('document.querySelector("#left").dataset.timeDetail'),"month");
   assert.ok(await evaluate('document.querySelector("#month-heading").textContent.toLowerCase().includes("декабрь")'));
   await reset();
