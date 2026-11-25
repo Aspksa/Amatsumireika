@@ -441,6 +441,22 @@ def snapshot():
                 "edges":[dict(source=s,target=t) for s,t in db.execute("SELECT source,target FROM edges ORDER BY source,target")],
                 "categories":CATEGORIES}
 
+def snapshot_window(after=0,limit=10000):
+    if type(after) is not int or after<0 or type(limit) is not int or not 1<=limit<=10000:
+        raise ValueError("Invalid atlas window")
+    with closing(connect()) as db:
+        db.execute("BEGIN")
+        rows=db.execute("SELECT id,title,category,folder,created_at FROM nodes WHERE id>? ORDER BY id LIMIT ?",(after,limit+1)).fetchall()
+        more=len(rows)>limit;rows=rows[:limit]
+        lo,hi=(rows[0][0],rows[-1][0]) if rows else (0,0)
+        total=db.execute("SELECT COUNT(*) FROM nodes").fetchone()[0]
+        total_edges=db.execute("SELECT COUNT(*) FROM edges").fetchone()[0]
+        return {"revision":db.execute("SELECT version FROM atlas_revision WHERE id=1").fetchone()[0],
+                "nodes":[dict(id=i,title=t,category=c,folder=f,created_at=at) for i,t,c,f,at in rows],
+                "edges":[dict(source=s,target=t) for s,t in db.execute("SELECT source,target FROM edges WHERE source BETWEEN ? AND ? AND target BETWEEN ? AND ? ORDER BY source,target LIMIT 50000",(lo,hi,lo,hi))],
+                "causes":[dict(source=s,target=t) for s,t in db.execute("SELECT source,target FROM cog_relations WHERE kind='cause' AND state='approved' AND source BETWEEN ? AND ? AND target BETWEEN ? AND ? LIMIT 10000",(lo,hi,lo,hi))],
+                "categories":CATEGORIES,"total_nodes":total,"total_edges":total_edges,"after":after,"next":hi if more else None}
+
 def add_node(title, category, folder=""):
     if not isinstance(title,str) or not title.strip() or len(title.strip())>160 or category not in CATEGORIES:
         raise ValueError("Invalid title or category")
@@ -554,7 +570,8 @@ class Handler(BaseHTTPRequestHandler):
         elif path=="/api/cloud/memory":
             self.reply(200,gateway.search(DB,parse_qs(urlsplit(self.path).query).get("q",[""])[0][:3000],gateway.EMBED_MODEL))
         elif path=="/api/atlas":
-            self.reply(200,snapshot())
+            q=parse_qs(urlsplit(self.path).query)
+            self.reply(200,snapshot_window(int(q.get("after",["0"])[0])) if q.get("window",["0"])[0]=="1" else snapshot())
         elif path=="/api/calendar":
             self.reply(200,get_calendars())
         elif path in ("/api/work/profiles","/api/work/report","/api/work/export","/api/time/window","/api/time/snapshots"):
@@ -676,7 +693,7 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self.reply(404,{"error":"Not found"})
                 return
-            self.reply(200,snapshot())
+            self.reply(200,snapshot_window(data.get("atlas_after",0)) if data.get("atlas_window") is True else snapshot())
         except (ValueError,TypeError,sqlite3.IntegrityError) as exc:
             self.reply(400,{"error":str(exc)})
         except sqlite3.Error:

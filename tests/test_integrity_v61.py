@@ -65,3 +65,14 @@ class Integrity61Test(unittest.TestCase):
         with closing(server.connect()) as db,db:
             db.execute("UPDATE nodes SET folder='Электрика' WHERE id=?",(a,))
             self.assertEqual([r["id"] for r in memory.search(db,"Электрика")],[a])
+
+    def test_atlas_windows(self):
+        a=server.add_node("Первый","Знания")
+        b=server.add_node("Второй","Знания")
+        c=server.add_node("Третий","Знания")
+        server.add_edge(a,b);server.add_edge(b,c)
+        v=server.snapshot_window(0,2)
+        self.assertEqual(v["total_nodes"],3)
+        self.assertEqual(v["next"],b)
+        self.assertEqual(v["edges"],[{"source":a,"target":b}])
+        self.assertEqual(server.snapshot_window(b,2)["nodes"][0]["id"],c)
