@@ -50,6 +50,18 @@ class AtlasTest(unittest.TestCase):
             server.save_settings({"cinemaMode":"invalid"})
         self.assertEqual(server.get_settings(),saved)
 
+    def test_document_layout_preferences_merge_and_validate(self):
+        server.save_settings({"palette":"Океан","speed":1.2})
+        layout={"mode":"gallery","density":"compact","opacity":75}
+        saved=server.save_settings({"diskLayout":layout})
+        self.assertEqual(saved["diskLayout"],layout)
+        self.assertEqual(saved["palette"],"Океан")
+        self.assertEqual(server.save_settings({"cinemaPower":0.5})["diskLayout"],layout)
+        for bad in ({**layout,"opacity":54},{**layout,"opacity":73},{**layout,"opacity":True},{**layout,"mode":"invalid"},{**layout,"density":"invalid"},{**layout,"extra":1},None):
+            with self.assertRaises(ValueError):
+                server.save_settings({"diskLayout":bad})
+        self.assertEqual(server.get_settings()["diskLayout"],layout)
+
     def test_visual_settings_and_events(self):
         self.assertEqual(server.get_settings(),{})
         saved=server.save_settings({"palette":"Океан","speed":1.2,"showLabels":False})

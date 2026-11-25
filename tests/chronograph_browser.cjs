@@ -124,16 +124,37 @@ async function main(){
   assert.equal(await evaluate('document.querySelector("#project-settings-page").hidden'),true);
   await evaluate('document.querySelector("#disk").click()');
   await until(()=>evaluate('!document.querySelector("#disk-page").hidden && document.querySelector("#disk-stats").textContent.includes("файлов")'),"document workspace");
+  assert.equal(await evaluate('getComputedStyle(document.querySelector("#disk-detail")).display'),"none");
+  await evaluate('document.querySelector("#disk-more-menu").open=true;document.querySelector("#disk-density-mode").value="compact";document.querySelector("#disk-density-mode").dispatchEvent(new Event("change"));document.querySelector("#disk-panel-opacity").value="75";document.querySelector("#disk-panel-opacity").dispatchEvent(new Event("input"));document.querySelector("#disk-panel-opacity").dispatchEvent(new Event("change"))');
+  await until(()=>evaluate('fetch("/api/settings").then(r=>r.json()).then(v=>v.diskLayout?.density==="compact"&&v.diskLayout?.opacity===75)'),"persisted document layout");
+  assert.equal(await evaluate('document.querySelector("#disk-page").classList.contains("disk-compact")'),true);
+  assert.equal(await evaluate('document.querySelector("#disk-page").style.getPropertyValue("--disk-opacity")'),"0.75");
+  await evaluate('document.querySelector("#disk-more-menu").open=false;document.querySelector("#disk-folder-menu").open=true;document.querySelector("#disk-folder-new").value="CI/Папка";document.querySelector("#disk-create-folder").click()');
+  await until(()=>evaluate('document.querySelector("#disk-tree").textContent.includes("Папка")'),"folder creation and tree");
+
   await evaluate('(()=>{const dt=new DataTransfer();dt.items.add(new File(["Документ CI: запасная деталь"],"test-ci.txt",{type:"text/plain"}));document.querySelector("#disk-upload").files=dt.files;document.querySelector("#disk-upload-go").click()})()');
   await until(()=>evaluate('document.querySelector("#disk-list").textContent.includes("test-ci.txt")'),"document upload");
   await evaluate('Array.from(document.querySelectorAll(".disk-file")).find(b=>b.textContent.includes("test-ci.txt")).click()');
   await until(()=>evaluate('document.querySelector("#disk-preview").textContent.includes("запасная деталь")'),"document text preview");
+  assert.equal(await evaluate('document.querySelector("#disk-page").classList.contains("has-document")'),true);
+  await evaluate('document.querySelector("#disk-detail-close").click()');
+  assert.equal(await evaluate('getComputedStyle(document.querySelector("#disk-detail")).display'),"none");
+  await evaluate('document.querySelector("#disk-query").value="запасная деталь";document.querySelector("#disk-search").click()');
+  await until(()=>evaluate('!document.querySelector("#disk-search-results").hidden&&document.querySelector("#disk-sources").textContent.includes("запасная деталь")'),"unified fragment search");
+  await evaluate('document.querySelector("#disk-query").value="";document.querySelector("#disk-search").click()');
+  assert.equal(await evaluate('document.querySelector("#disk-search-results").hidden'),true);
+
   await evaluate('document.querySelector("#disk-mode-graph").click()');
   await until(()=>evaluate('document.querySelector("#disk-graph-legend").textContent.includes("реальные связи")'),"document graph");
   await evaluate('document.querySelector("#disk-mode-list").click()');
   assert.equal(await evaluate('document.querySelector("#disk-graph-pane").hidden'),true);
   await evaluate('document.querySelector("#disk-back").click()');
   assert.equal(await evaluate('document.querySelector("#disk-page").hidden'),true);
+  await until(()=>evaluate('fetch("/api/settings").then(r=>r.json()).then(v=>v.diskLayout?.mode==="list")'),"persisted view mode");
+  await evaluate('document.querySelector("#disk").click()');
+  await until(()=>evaluate('document.querySelector("#disk-mode-list").getAttribute("aria-pressed")==="true"&&document.querySelector("#disk-page").classList.contains("disk-compact")'),"restored workspace layout");
+  await evaluate('document.querySelector("#disk-back").click()');
+
   assert.deepEqual(errors,[]);
   await evaluate('document.querySelector("#atlas").click()');await delay(200);await evaluate('Array.from(document.querySelectorAll(".swatch")).find(b=>b.textContent.includes("Бумага")).click()');await evaluate('document.querySelector("#home").click()');await delay(350);
   assert.equal(await evaluate('document.documentElement.classList.contains("paper")'),true);

@@ -405,6 +405,13 @@ def save_settings(data):
         if type(value) not in (int,float) or not math.isfinite(value) or not 0 <= value <= 1:
             raise ValueError("Invalid cinema power")
         out["cinemaPower"] = value
+    if "diskLayout" in data:
+        layout=data["diskLayout"]
+        if not isinstance(layout,dict) or set(layout)!={"mode","density","opacity"}:raise ValueError("Invalid disk layout")
+        if layout["mode"] not in ("list","tiles","gallery","graph") or layout["density"] not in ("comfortable","compact"):raise ValueError("Invalid disk layout mode")
+        opacity=layout["opacity"]
+        if type(opacity) is not int or not 55<=opacity<=100 or opacity%5:raise ValueError("Invalid disk panel opacity")
+        out["diskLayout"]=layout
     with closing(connect()) as db, db:
         db.execute("BEGIN IMMEDIATE")
         row = db.execute("SELECT payload FROM ui_settings WHERE id=1").fetchone()
