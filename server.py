@@ -358,7 +358,7 @@ def chat_history(db):
     rows = db.execute("SELECT id,role,content,created_at FROM chat_messages ORDER BY id DESC LIMIT 200").fetchall()
     messages=[dict(id=i,role=r,content=c,created_at=a) for i,r,c,a in reversed(rows)]
     if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='cloud_jobs'").fetchone():
-        for ident,prompt,answer,created,finished,job_status,tool_result in db.execute("SELECT id,prompt,answer,created,finished,status,tool_result FROM cloud_jobs ORDER BY created DESC LIMIT 100"):
+        for ident,prompt,answer,created,finished,job_status,tool_result in db.execute("SELECT id,prompt,answer,created,finished,status,tool_result FROM cloud_jobs WHERE mode<>'embedding' ORDER BY created DESC LIMIT 100"):
             messages.append(dict(id=ident+"-user",role="user",content=prompt,created_at=created))
             if answer or tool_result or job_status not in ("queued","running"):
                 body=answer+("\nЛокальный результат: "+tool_result if tool_result else "")
@@ -495,7 +495,7 @@ class Handler(BaseHTTPRequestHandler):
         elif path=="/api/cloud/job":
             self.reply(200,gateway.status(DB,parse_qs(urlsplit(self.path).query).get("id",[""])[0]))
         elif path=="/api/cloud/memory":
-            self.reply(200,gateway.search(DB,parse_qs(urlsplit(self.path).query).get("q",[""])[0][:3000]))
+            self.reply(200,gateway.search(DB,parse_qs(urlsplit(self.path).query).get("q",[""])[0][:3000],gateway.EMBED_MODEL))
         elif path=="/api/atlas":
             self.reply(200,snapshot())
         elif path=="/api/calendar":
@@ -544,6 +544,9 @@ class Handler(BaseHTTPRequestHandler):
             data=json.loads(self.rfile.read(n))
             if not isinstance(data,dict):
                 raise ValueError("Expected object")
+            if self.path=="/api/cloud/embed-search":
+                self.reply(200,gateway.embed_search(DB,data))
+                return
             if self.path=="/api/cloud/budget":
                 self.reply(200,budget.save(DB,data))
                 return

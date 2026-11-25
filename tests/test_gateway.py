@@ -60,3 +60,24 @@ class GatewayTest(unittest.TestCase):
             self.assertEqual(gateway.local_tool(path,"local_search",{"query":"Машина"})[0]["title"],"Машина")
             with self.assertRaises(ValueError): gateway.local_tool(path,"delete",{})
             self.assertIn("reasoning",gateway.classify("deepseek-ai/DeepSeek-V4-Pro")["capabilities"])
+
+    def test_embedding_consent_cache_and_budget(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)/"db"
+            with patch.object(server,"DB",path):
+                server.initialize()
+                node=server.add_node("Машина","Знания")
+            cloud_api.SESSION[str(path)]="fake-test-key"
+            try:
+                with closing(gateway.db_open(path)) as db, db:
+                    db.execute("UPDATE cloud_config SET models=? WHERE id=1",('["'+gateway.EMBED_MODEL+'"]',))
+                gateway.budget.save(path,{"day":10,"month":100,"model":gateway.EMBED_MODEL,"input":1,"output":0})
+                data={"query":"Автомобиль","node_id":node,"title":"Машина","confirm":False}
+                with patch.object(gateway,"embedding_request",return_value=([[1]+[0]*1023,[1]+[0]*1023],12)) as call:
+                    with self.assertRaises(ValueError): gateway.embed_search(path,data)
+                    call.assert_not_called()
+                    result=gateway.embed_search(path,{**data,"confirm":True})
+                    self.assertEqual(result["results"][0]["title"],"Машина")
+                    self.assertTrue(gateway.embed_search(path,data)["cache"])
+                    call.assert_called_once()
+            finally: cloud_api.SESSION.pop(str(path),None)

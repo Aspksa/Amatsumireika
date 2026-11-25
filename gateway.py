@@ -255,3 +255,64 @@ def local_tool(path,name,args):
         if name=="local_categories": return [dict(r) for r in db.execute("SELECT category,COUNT(*) count FROM nodes GROUP BY category")]
         if name=="local_date": return {"local":datetime.now().astimezone().isoformat()}
     raise ValueError("Tool not permitted")
+
+# OpenAI-compatible embedding integration documented in the Cloud.ru Roo Code guide.
+# Actual /embeddings compatibility requires a user-authorized smoke test.
+EMBED_MODEL="Qwen/Qwen3-Embedding-0.6B"
+def embedding_request(key,texts):
+    req=Request(BASE+"/embeddings",data=json.dumps({"model":EMBED_MODEL,"input":texts}).encode(),headers={"Authorization":"Bearer "+key,"Content-Type":"application/json"},method="POST")
+    with build_opener(cloud_api.NoRedirect()).open(req,timeout=15) as response:
+        raw=response.read(2_000_001)
+        if len(raw)>2_000_000: raise ValueError("Embedding response too large")
+        data=json.loads(raw)
+        rows=sorted(data["data"],key=lambda x:x["index"])
+        if [x["index"] for x in rows]!=list(range(len(texts))): raise ValueError("Invalid embedding indexes")
+        vectors=[vector(x["embedding"]) for x in rows]
+        if any(len(v)!=1024 for v in vectors): raise ValueError("Unexpected embedding dimension")
+        u=data.get("usage") or {}
+        n=u.get("prompt_tokens",u.get("total_tokens"))
+        return vectors,n if type(n) is int and 0<=n<=100_000_000 else None
+
+def embed_search(path,data):
+    q=data.get("query")
+    if not isinstance(q,str) or not 1<=len(q.strip())<=300 or type(data.get("node_id")) is not int: raise ValueError("Query and node ID required")
+    q=q.strip()
+    if not ACTIVE.acquire(False): raise ValueError("Another cloud request is running")
+    ident=hashlib.sha256((now()+q).encode()).hexdigest()[:32]
+    usage=None;outcome="failed";error="";start=time.monotonic();reserved=False
+    try:
+        with cloud_api.LOCK, closing(db_open(path)) as db:
+            node=db.execute("SELECT title FROM nodes WHERE id=?",(data["node_id"],)).fetchone()
+            if not node: raise ValueError("Node not found")
+            if node["title"]!=data.get("title"): raise ValueError("Record changed; select it again")
+            texts=list(dict.fromkeys([q,node["title"]]))
+            missing=[t for t in texts if not db.execute("SELECT 1 FROM embedding_cache WHERE model=? AND digest=?",(EMBED_MODEL,digest(t))).fetchone()]
+            if not missing: return {"results":search(path,q,EMBED_MODEL),"cache":True}
+            if data.get("confirm") is not True: raise ValueError("Explicit embedding consent required")
+            key,_=cloud_api.read_key(db,path)
+            if not key or EMBED_MODEL not in json.loads(db.execute("SELECT models FROM cloud_config WHERE id=1").fetchone()[0]): raise ValueError("Embedding model unavailable")
+            if any(key in t for t in missing): raise ValueError("Do not send API keys")
+            fp=digest(json.dumps(texts,ensure_ascii=False))
+            recent=db.execute("SELECT 1 FROM cloud_jobs WHERE mode='embedding' AND fingerprint=? AND created>=?",(fp,datetime.fromtimestamp(time.time()-60,timezone.utc).isoformat())).fetchone()
+            if recent: raise ValueError("Recent embedding attempt; check history before retry")
+            with db:
+                budget.reserve(db,ident,EMBED_MODEL,8192,0)
+                db.execute("INSERT INTO cloud_jobs(id,model,mode,status,created,prompt,fingerprint) VALUES(?,?,?,?,?,?,?)",(ident,EMBED_MODEL,"embedding","running",now(),"",fp))
+                db.execute("UPDATE cloud_config SET requests=requests+1 WHERE id=1")
+            reserved=True
+        vectors,usage=embedding_request(key,missing)
+        with closing(db_open(path)) as db, db:
+            for t,v in zip(missing,vectors): cache_vector(db,EMBED_MODEL,t,v)
+        outcome="done"
+        return {"results":search(path,q,EMBED_MODEL),"cache":False}
+    except (HTTPError,URLError,OSError,KeyError,TypeError):
+        error="embedding_provider_error"
+        raise ValueError("Embedding request failed; check history before retry") from None
+    finally:
+        try:
+            if reserved:
+                with closing(db_open(path)) as db, db:
+                    budget.settle(db,ident,usage,0)
+                    db.execute("UPDATE cloud_jobs SET status=?,finished=?,error=?,input_tokens=?,output_tokens=0,latency_ms=? WHERE id=?",(outcome,now(),error or ("" if outcome=="done" else "invalid_response"),usage,round((time.monotonic()-start)*1000),ident))
+                    db.execute("UPDATE cloud_config SET successes=successes+?,failures=failures+?,input_tokens=input_tokens+? WHERE id=1",(int(outcome=="done"),int(outcome!="done"),usage or 0))
+        finally: ACTIVE.release()
