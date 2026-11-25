@@ -101,7 +101,6 @@ main.expanded #chat-panel,body.presentation #chat-panel{display:none}
 .time-panel{text-align:center;padding:28px 0 25px}
 .clock-caption{font:9px var(--mono);letter-spacing:2px;color:var(--muted)}
 #clock{font:600 clamp(19px,3.45vw,48px) var(--mono);letter-spacing:-.055em;line-height:1.4;white-space:nowrap;color:var(--ink)}
-#clock-date{font-size:12px;color:var(--ink);margin-top:5px;text-transform:capitalize}
 #clock-zone{font:9px var(--mono);color:var(--muted);margin-top:8px;overflow-wrap:anywhere}
 .calendar-panel{border-top:1px solid var(--line);padding-top:18px}
 .calendar-panel #calendar{gap:4px}
@@ -163,11 +162,6 @@ main:not(.expanded) #left{padding:clamp(6px,1vw,16px);justify-content:center;gap
 .chrono-years{display:flex;align-items:center;justify-content:center;gap:12px;flex:none}
 .chrono-years button{background:transparent;padding:4px 6px;color:var(--muted);font:11px var(--mono)}
 .chrono-years button.active{background:transparent;color:#eac275;font-weight:700}
-.chrono-wheel{position:relative;width:100%;aspect-ratio:1;flex:none;max-width:440px;align-self:center}
-#year-wheel{width:100%;height:100%;cursor:crosshair}
-.chrono-clock{position:absolute;left:50%;top:50%;width:42%;transform:translate(-50%,-50%);text-align:center;pointer-events:none}
-.chrono-clock #clock{color:#eac275;font:600 clamp(12px,8.4cqw,34px)/1.15 var(--mono);letter-spacing:-.07em;font-variant-numeric:tabular-nums;white-space:nowrap}
-#clock-date{font:10px/1.4 var(--sans);color:var(--ink);margin:4px 0;text-transform:none}
 #year-progress{font:9px var(--mono);color:var(--muted)}
 .chrono-legend{display:flex;justify-content:center;flex-wrap:wrap;gap:8px;font:9px var(--mono);color:var(--muted)}
 .chrono-legend span:before{content:"";display:inline-block;width:5px;height:5px;border-radius:50%;margin-right:4px;background:var(--day-color)}
@@ -183,16 +177,12 @@ main:not(.expanded) #left{padding:clamp(6px,1vw,16px);justify-content:center;gap
 .chrono-numbers small{font:9px var(--sans);color:var(--muted)}
 .chrono-month,.chrono-norms,#prod-warning{margin-top:12px;text-align:center;font:10px/1.5 var(--mono);color:var(--muted)}
 #prod-warning:empty{display:none}.chrono-events{margin-top:2px}.chrono-events summary{font-size:10px}
-:root.paper .chrono-clock #clock,:root.paper .chrono-years button.active{color:#987026}
 @media(max-width:760px){main:not(.expanded) #left{max-width:440px;width:100%;justify-self:center;padding:16px;justify-content:flex-start}.chrono-clock #clock{font-size:clamp(12px,8.4cqw,34px)}}
 @media(max-height:670px) and (min-width:761px){main:not(.expanded) #left{justify-content:flex-start}}
 
 /* Eternal Time — no card frames; independent depth and month navigation. */
 .chrono-level{display:flex;justify-content:center;align-items:center;gap:4px;font:10px var(--mono);color:var(--muted)}
 .chrono-level button{background:transparent;color:var(--accent);padding:2px 7px;font-size:16px}
-.chrono-wheel{background:radial-gradient(circle at 50% 50%,#b9985020 0,transparent 35%,#45c9af08 43%,transparent 65%)}
-.chrono-clock #clock{color:#f4d99e;text-shadow:0 0 12px #eac27530}
-:root.paper .chrono-clock #clock{text-shadow:none}
 .chrono-extra{grid-template-columns:repeat(2,minmax(0,1fr));margin-top:12px}
 .chrono-extra strong{font-size:clamp(14px,6cqw,21px)}
 #prod-month{display:block;width:100%;background:transparent;color:var(--muted);padding:4px}
@@ -200,134 +190,23 @@ main:not(.expanded) #left{padding:clamp(6px,1vw,16px);justify-content:center;gap
 #calendar-update-status{font:10px/1.5 var(--mono);overflow-wrap:anywhere;color:var(--muted)}
 
 /* Singularity — separate lightweight overlay, no panels or visual frames. */
-#time-overlay{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1}#year-wheel{position:relative;z-index:0}.chrono-clock{z-index:2}
 .time-actions{display:flex;flex-wrap:wrap;gap:5px;margin:7px 0}.time-actions button,.time-actions a{background:var(--surface);border:0;color:var(--accent);font:10px var(--mono);padding:5px;text-decoration:none}
 #time-history-status,#time-biography,#time-performance,#work-message{font:10px/1.5 var(--mono);color:var(--muted);overflow-wrap:anywhere;margin:6px 0}
 #time-memory,#time-snapshots,#work-table{max-height:160px;overflow:auto;font-size:10px}#time-memory p{margin:3px 0}
 #work-panel form{display:flex;flex-direction:column;gap:5px;margin:8px 0}#work-panel input,#work-panel select{width:100%;min-width:0;background:var(--surface);border:0;padding:6px;font:11px var(--sans)}#work-panel label{font-size:10px;color:var(--muted)}.work-person-row{margin:8px 0;font-size:10px}.work-person-row small{display:block;font:9px/1.4 var(--mono);color:var(--muted)}.work-bar{height:3px;background:var(--surface);margin:4px 0}.work-bar i{display:block;height:100%;background:var(--accent)}.work-day-row{padding:4px;cursor:pointer}.work-day-row:hover{color:var(--accent)}
-@media(prefers-reduced-motion:reduce){.chrono-clock{text-shadow:none}}
 
 #work-forecast{font:10px/1.5 var(--mono);color:var(--muted)}.work-day-row{display:block;width:100%;text-align:left;background:transparent;border:0;font:10px var(--mono)}#stage.time-signal{animation:timeMemoryPulse .9s ease-out}@keyframes timeMemoryPulse{0%{filter:brightness(1)}25%{filter:brightness(1.25)}100%{filter:brightness(1)}}@media(prefers-reduced-motion:reduce){#stage.time-signal{animation:none}}
 
-/* Cinematic Time Engine: bounded, independent layers, no layout transforms. */
-.chrono-wheel{isolation:isolate;overflow:hidden;contain:paint}
-.chrono-clock #clock{font-size:clamp(11px,7.4cqw,32px);letter-spacing:-.055em;text-shadow:0 0 8px #eac27555;font-variant-numeric:tabular-nums}
-.cinema-digit,.cinema-colon{display:inline-block;position:relative;white-space:pre}
-.cinema-digit.digit-arrive{animation:cinemaDigit .36s cubic-bezier(.16,1,.3,1) both}
-.cinema-digit.digit-arrive[data-old]:after{content:attr(data-old);position:absolute;inset:0;pointer-events:none;color:#eac275;animation:cinemaDepart .29s ease-out both}
-.cinema-colon{animation:cinemaColon 2s ease-in-out infinite}
-@keyframes cinemaDigit{0%{opacity:.35;transform:translateY(2px) scaleY(.86);filter:blur(1px)}100%{opacity:1;transform:none;filter:none}}
-@keyframes cinemaDepart{0%{opacity:.24;transform:none}100%{opacity:0;transform:translateY(-4px) scale(1.1);filter:blur(2px)}}
-@keyframes cinemaColon{0%,100%{opacity:1}50%{opacity:.55}}
-.cinema-option{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0;font:10px var(--mono);color:var(--muted)}
-.cinema-option select{font:10px var(--mono);background:var(--surface);padding:4px;color:var(--ink)}.cinema-option input{width:52%;accent-color:var(--accent)}
-#left[data-cinema="off"] .cinema-digit,#left[data-cinema="off"] .cinema-colon,#left[data-cinema="quiet"] .cinema-digit,#left[data-cinema="quiet"] .cinema-colon{animation:none}
-#left[data-cinema="off"] .cinema-digit:after,#left[data-cinema="quiet"] .cinema-digit:after{display:none}
-@media(prefers-reduced-motion:reduce){.cinema-digit,.cinema-digit:after,.cinema-colon{animation:none!important}.cinema-digit:after{display:none}}
 
-#left[data-night="true"] .cinema-digit,#left[data-night="true"] .cinema-colon{animation:none}#left[data-night="true"] .cinema-digit:after{display:none}#left[data-cinema="off"] .chrono-clock #clock{text-shadow:none}.chrono-clock #clock{text-shadow:0 0 calc(10px * var(--cinema-intensity,.72)) #eac27555}
-
-/* v1.2: top-aligned, square time display, no secondary tools on the home screen. */
-main:not(.expanded) #left{justify-content:flex-start;align-items:stretch;padding-top:clamp(4px,1vh,12px);gap:6px}
-.chrono-wheel{position:relative;aspect-ratio:1/1;height:auto;width:100%;flex:0 0 auto;max-width:440px;min-height:0;margin:0 auto;align-self:center}
-#year-wheel,#time-overlay{position:absolute;inset:0;width:100%;height:100%;display:block;box-sizing:border-box}
-#year-wheel{z-index:0}#time-overlay{z-index:1;pointer-events:none}.chrono-clock{z-index:2}
-.chrono-level[hidden]{display:none!important}.chrono-stats{padding-top:4px}.chrono-period{margin-bottom:7px}.chrono-extra{margin-top:8px}.chrono-month,.chrono-norms{margin-top:7px}
 #time-tools .time-actions button{width:auto}#time-tools .cinema-option{font-size:11px}
-@media(max-width:760px){main:not(.expanded) #left{padding-top:6px;align-self:start}}
-
-/* v1.2.1: readable semantic colors in both themes. */
 :root{--muted:#a0b4c1;--ink:#e1ebef}
 :root.paper{--muted:#455b65;--ink:#21313a}
-.chrono-legend .work{--day-color:#57e4c8}.chrono-legend .weekend{--day-color:#91a7cf}.chrono-legend .holiday{--day-color:#ffd17a}.chrono-legend .short{--day-color:#ffa48f}
-:root.paper .chrono-legend .work{--day-color:#187662}:root.paper .chrono-legend .weekend{--day-color:#49658a}:root.paper .chrono-legend .holiday{--day-color:#8e5f13}:root.paper .chrono-legend .short{--day-color:#a74435}
-.chrono-legend span:before{width:7px;height:7px}.chrono-legend{font-size:10px}
-:root.paper .chrono-clock #clock{color:#80550f;text-shadow:none}
 #core-activity{position:absolute;bottom:25px;left:6px;right:6px;text-align:center;font:11px var(--mono);color:var(--ink);pointer-events:none}
 #core-activity:empty,main.expanded #core-activity{display:none}
 #stage.core-working #core-open{outline:2px solid var(--accent);outline-offset:8px;animation:coreWork 1.4s ease-in-out infinite}
 @keyframes coreWork{50%{outline-offset:16px;outline-color:transparent}}
 @media(prefers-reduced-motion:reduce){#stage.core-working #core-open{animation:none}}
-
-/* Single spiral: full weekday and date, high-contrast clock. */
-.chrono-wheel{background:radial-gradient(circle at 50% 50%,#b9985010 0,transparent 46%)}
-.chrono-clock{width:44%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px}
-.chrono-clock #clock{font:700 clamp(15px,8.2cqw,36px)/1.08 var(--mono);letter-spacing:-.065em;color:#fff0ca;text-shadow:0 0 10px #eac27540}
-#clock-date{font:600 clamp(10px,4.1cqw,18px)/1.25 var(--sans);color:var(--ink);margin:0;white-space:nowrap}
-#clock-weekday{font:650 clamp(10px,3.9cqw,17px)/1.25 var(--sans);color:#ffd17a;text-transform:capitalize;white-space:nowrap}
-#year-progress{font:500 clamp(9px,3cqw,13px)/1.2 var(--mono);color:var(--muted);margin-top:1px}
-:root.paper .chrono-clock #clock,:root.paper #clock-weekday{color:#80550f;text-shadow:none}
-@media(prefers-reduced-motion:reduce){.chrono-clock #clock{text-shadow:none}}
-
-/* Reference-inspired radial chart and ordinary monthly calendar. */
 @media(min-width:1000px){main:not(.expanded){grid-template-columns:minmax(0,26fr) minmax(0,41fr) minmax(0,33fr)}}
-.month-calendar{flex:none;width:100%;max-width:440px;margin:8px auto 0;padding:10px 0 6px;border-top:1px solid var(--line)}
-.month-nav{display:grid;grid-template-columns:34px minmax(0,1fr) 34px;align-items:center;gap:5px;text-align:center}
-.month-nav button{font-size:23px;line-height:1;padding:5px;background:transparent;border:0}
-#month-heading{font:650 clamp(13px,5cqw,19px)/1.3 var(--sans);text-transform:capitalize;color:var(--ink)}
-.month-weekdays,#month-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px;text-align:center}
-.month-weekdays{margin:8px 0 4px;color:var(--muted);font:600 11px var(--sans)}
-.month-day,.month-blank{min-width:0;min-height:29px;aspect-ratio:1.3}
-.month-day{padding:2px;border:1px solid transparent;background:transparent;color:var(--ink);font:600 clamp(12px,4.3cqw,16px)/1 var(--mono);font-variant-numeric:tabular-nums}
-.month-day.is-today{border-color:#ffd17a;color:#ffd17a}
-.month-day.is-selected{background:#ffd17a;color:#21180b;border-color:#ffd17a}
-.month-day:hover:not(.is-selected){border-color:var(--accent);color:var(--accent)}
-#month-today{display:block;margin:6px auto 0;background:transparent;border:0;color:var(--accent);font-size:12px}
-:root.paper .month-day.is-today{color:#80550f;border-color:#80550f}
-:root.paper .month-day.is-selected{background:#80550f;color:#fff6e5;border-color:#80550f}
-
-/* Imperial time — warm metal on obsidian, semantic gold and platinum. */
-#left .chrono-wheel{background:radial-gradient(circle at 50% 50%,#b18d4420 0,transparent 44%)}
-.chrono-legend .work{--day-color:#d9af61}.chrono-legend .weekend{--day-color:#b4bec9}.chrono-legend .holiday{--day-color:#ffe5a2}.chrono-legend .short{--day-color:#bc8254}
-:root.paper .chrono-legend .work{--day-color:#956510}:root.paper .chrono-legend .weekend{--day-color:#586779}:root.paper .chrono-legend .holiday{--day-color:#78500a}:root.paper .chrono-legend .short{--day-color:#955039}
-#left .month-day.is-selected{box-shadow:inset 0 1px 0 #fff1ca70}
-#left.chrono-month-transition #year-wheel,#left.chrono-month-transition #time-overlay,#left.chrono-month-transition #month-grid{animation:chronoMonthReveal .32s ease-out both}
-@keyframes chronoMonthReveal{from{opacity:.24}to{opacity:1}}
-#left[data-cinema="off"] #year-wheel,#left[data-cinema="off"] #time-overlay,#left[data-cinema="off"] #month-grid{animation:none}
-@media(prefers-reduced-motion:reduce){#left.chrono-month-transition #year-wheel,#left.chrono-month-transition #time-overlay,#left.chrono-month-transition #month-grid{animation:none}}
-
-/* Clock-only center and federal production calendar, gold rest days. */
-.chrono-clock{width:44%}
-.chrono-clock #clock{font-size:clamp(15px,9.1cqw,38px);letter-spacing:-.07em}
-#calendar-date-label{text-align:center;text-transform:capitalize;color:var(--muted);font:500 12px/1.4 var(--sans);margin:5px 0}
-#month-expand{display:block;margin:3px auto;background:transparent;border:0;color:var(--muted);padding:4px 8px;font-size:11px}
-#left .month-day.kind-weekend,#left .month-day.kind-transfer{color:#e4b85e;background:#d5a54e13;font-weight:700}
-#left .month-day.kind-holiday{color:#ffe6a1;background:#d5a54e29;border-color:#b98b3a;font-weight:750}
-#left .month-day.kind-short{box-shadow:inset 0 -2px 0 #b98b3a}
-#left .month-day.is-today{border-color:#f9eccd;outline:1px solid #f9eccd;outline-offset:-2px}
-#left .month-day.is-selected{background:#ffd17a;color:#21180b;border-color:#ffd17a}
-.month-footer{display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap;font:10px var(--sans);margin-top:5px}
-.month-rest-key{color:#e4b85e}.month-holiday-key{color:#ffe6a1;font-weight:700}
-.month-footer #month-today{margin:0}
-#month-rule-notice{color:var(--muted);font:11px/1.4 var(--sans);text-align:center}
-#month-rule-notice:empty{display:none}
-:root.paper #left .month-day.kind-weekend,:root.paper #left .month-day.kind-transfer{color:#80550f;background:#b78b2320}
-:root.paper #left .month-day.kind-holiday{color:#704605;background:#b78b2335;border-color:#9a6a17}
-:root.paper #left .month-day.is-today{border-color:#80550f;outline-color:#80550f}
-:root.paper #left .month-day.is-selected{background:#80550f;color:#fff6e5;border-color:#80550f}
-:root.paper .month-rest-key,:root.paper .month-holiday-key{color:#80550f}
-
-/* A continuous, frameless time column. Seasonal rays; gold rest dates stay in the calendar. */
-main:not(.expanded) #left{border:0;gap:0;padding-bottom:12px}
-#left .chrono-wheel{background:transparent}
-#left .month-calendar{border:0;background:transparent;margin:0 auto;padding:2px 0 0}
-#left .month-nav{grid-template-columns:30px minmax(0,1fr) 30px;gap:4px}
-#left .month-nav button{border:0;background:transparent;box-shadow:none}
-#left #month-heading{padding:6px 2px;white-space:normal;font:650 clamp(13px,5cqw,19px)/1.3 var(--sans);color:var(--ink);text-transform:capitalize}
-#left #month-heading[aria-pressed="true"]{color:#e4b85e}
-#left .month-weekdays{margin:5px 0 2px}
-#left .month-day{border:0;border-radius:4px;box-shadow:none}
-#left .month-day.kind-holiday{border:0;background:transparent;color:#ffe6a1;font-weight:800;text-decoration:underline;text-underline-offset:3px}
-#left .month-day.kind-weekend,#left .month-day.kind-transfer{background:transparent;color:#e4b85e}
-#left .month-day.kind-short{box-shadow:none;text-decoration:underline;text-underline-offset:3px}
-#left .month-day.is-today{outline:0;text-decoration:underline;text-underline-offset:4px;text-decoration-thickness:2px}
-#left .month-day.is-selected{background:#ffd17a;color:#21180b;box-shadow:none}
-#left .month-day:focus-visible,#left .month-nav button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
-:root.paper #left #month-heading[aria-pressed="true"],:root.paper #left .month-day.kind-weekend,:root.paper #left .month-day.kind-transfer{color:#80550f}
-:root.paper #left .month-day.kind-holiday{color:#704605;background:transparent}
-:root.paper #left .month-day.is-selected{background:#80550f;color:#fff6e5}
-
-/* Imperial typography, self-hosted OFL fonts; no network/CDN dependencies. */
 @font-face{font-family:"Source Serif 4";src:url("/fonts/source-serif.woff2") format("woff2");font-weight:400;font-style:normal;font-display:swap}
 @font-face{font-family:Inter;src:url("/fonts/inter.ttf") format("truetype");font-weight:100 900;font-style:normal;font-display:swap}
 @font-face{font-family:Manrope;src:url("/fonts/manrope.ttf") format("truetype");font-weight:200 800;font-style:normal;font-display:swap}
@@ -347,105 +226,67 @@ h2{font:650 var(--type-xs)/1.4 var(--sans);letter-spacing:.08em}
 .chat-message:not(.user)>div:last-child,.chat-empty{font:400 clamp(15px,1.2vw,18px)/1.66 var(--serif);letter-spacing:0}
 .chat-message.user>div:last-child,#chat-input{font:400 var(--type-base)/1.55 var(--sans)}
 .chat-heading strong{font:600 clamp(15px,1.2vw,18px)/1.3 var(--display)}
-.chrono-clock{width:44%;gap:0}
-.chrono-clock #clock{font:450 clamp(14px,9.4cqw,40px)/1 var(--numbers);font-variant-numeric:tabular-nums lining-nums;letter-spacing:-.045em;display:flex;align-items:baseline;justify-content:center;white-space:nowrap;text-shadow:0 0 9px #eac27530}
-#clock .cinema-digit{min-width:.57em;text-align:center}
-#clock .cinema-colon{min-width:.27em;text-align:center;animation:none}
-#clock .clock-seconds{font-size:.72em;opacity:.78}
-#clock .cinema-digit.digit-arrive{animation-duration:.24s}
-#clock .cinema-digit.digit-arrive[data-old]:after{animation-duration:.2s}
-#left #month-heading{font:650 clamp(14px,5cqw,20px)/1.3 var(--numbers);color:var(--season-dark,var(--ink))}
-:root.paper #left #month-heading{color:var(--season-light,var(--ink))}
-#left .month-weekdays{font:500 var(--type-xs)/1.4 var(--sans);letter-spacing:.01em}
-#left .month-day{font:550 clamp(12px,4.5cqw,17px)/1.2 var(--numbers);font-variant-numeric:tabular-nums;transition:color .18s,background-color .18s}
-#left .month-day.kind-weekend,#left .month-day.kind-transfer{font-weight:650}
-#left .month-day.kind-holiday{font-weight:750}
-#left.chrono-month-transition #month-grid{animation:monthSlide .28s cubic-bezier(.2,.8,.2,1) both}
-@keyframes monthSlide{from{opacity:.35;transform:translateX(var(--month-slide,0px))}to{opacity:1;transform:translateX(0)}}
-#left[data-cinema="off"] #month-grid{animation:none}
-@media(prefers-reduced-motion:reduce){#left.chrono-month-transition #month-grid{animation:none}#left .month-day{transition:none}}
 @media(max-width:760px){.brand-name{font-size:20px}.brand em{font-size:12px}.stage-title h1{font-size:22px}}
-
-/* Clear annual silhouette: stepped calendar weeks, horizontal month captions, lower calendar. */
-#left .chrono-wheel{max-width:510px}
-#left .month-calendar{margin:clamp(24px,5cqw,44px) auto 0}
-#left .chrono-wheel #year-wheel{cursor:pointer}
+/* Imperial Minimalism: authoritative Chronos composition and motion. */
+#left{--chrono-gold:#ffd17a;--chrono-season:var(--chrono-season-dark,#dba253);--chrono-space:clamp(12px,4cqw,20px);--chrono-width: min(100%,510px)}
+:root.paper #left{--chrono-gold:#80550f;--chrono-season:var(--chrono-season-paper,#a35b19)}
+main:not(.expanded) #left{justify-content:flex-start;align-items:stretch;padding-top:clamp(4px,1vh,12px);padding-bottom:12px;gap:0;border:0;background:transparent}
+#left .chrono-wheel{position:relative;width:var(--chrono-width);aspect-ratio:1;flex:none;margin:0 auto;isolation:isolate;overflow:hidden;contain:paint;background:transparent}
+#year-wheel,#time-overlay{position:absolute;inset:0;width:100%;height:100%;display:block}
+#year-wheel{z-index:0;cursor:pointer}#time-overlay{z-index:1;pointer-events:none}
+#left .chrono-clock{position:absolute;z-index:2;left:50%;top:50%;width:44%;transform:translate(-50%,-50%);text-align:center;pointer-events:none}
+#left[data-time-detail="year"] .chrono-clock{width:26.15%}
+#left .chrono-clock #clock{display:flex;align-items:baseline;justify-content:center;white-space:nowrap;font:400 clamp(14px,9cqw,38px)/1 Manrope,Inter,"Segoe UI",sans-serif;letter-spacing:-.04em;color:#fff0ca;font-variant-numeric:tabular-nums lining-nums}
+#left[data-time-detail="year"] .chrono-clock #clock{font-size:clamp(12px,7.3cqw,34px)}
+:root.paper #left .chrono-clock #clock{color:#80550f}
+#clock .cinema-digit,#clock .cinema-colon{display:inline-block;text-align:center;position:relative;white-space:pre;min-width:.57em}
+#clock .cinema-colon{min-width:.27em}#clock .clock-seconds{font-size:.66em;opacity:.8}
+#clock .cinema-digit::after{display:none!important;content:none!important}
 #spiral-tooltip{position:absolute;bottom:3px;left:50%;transform:translateX(-50%);z-index:4;pointer-events:none;max-width:95%;width:max-content;text-align:center;background:var(--surface);color:var(--ink);padding:5px 9px;border-radius:6px;font:500 11px/1.4 var(--sans)}
 #spiral-tooltip[hidden]{display:none}
-@media(max-width:760px){#left .month-calendar{margin-top:24px}}
-
-/* Full radial month names: annual label gutter shares the exact Canvas/overlay transform. */
-#left[data-time-detail="year"] .chrono-clock{width:37%}
-#left[data-time-detail="year"] .chrono-clock #clock{font-size:clamp(12px,7.8cqw,34px)}
-
-/* Chronos 5: one frameless, responsive time composition. */
-#left{--chrono-gold:#ffd17a;--chrono-season:var(--chrono-season-dark,#e9a349);--chrono-daylight:1}
-:root.paper #left{--chrono-gold:#80550f;--chrono-season:var(--chrono-season-paper,#a35b19)}
-#left .chrono-wheel{background:radial-gradient(ellipse at center,color-mix(in srgb,var(--chrono-season) 5%,transparent),transparent 48%)}
-#left .month-calendar{margin:clamp(24px,5cqw,42px) auto 0;max-width:440px;padding:0 5px 10px}
-#left .month-nav{gap:8px;align-items:center}
-#left .month-nav button{min-height:34px;color:var(--chrono-season);border-radius:50%}
-#left .month-nav button:hover{background:color-mix(in srgb,var(--chrono-season) 9%,transparent)}
-#left #month-heading{font:550 clamp(15px,5.5cqw,22px)/1.3 var(--numbers);letter-spacing:-.025em;border-radius:0}
-#left #month-grid,#left .month-weekdays{gap:clamp(3px,1.5cqw,8px)}
-#left .month-day{position:relative;isolation:isolate;min-width:0;border-radius:50%;aspect-ratio:1/1;min-height:0;height:auto;font-weight:500}
-#left .month-day.is-past:not(.is-selected):not(.kind-holiday):not(.kind-weekend):not(.kind-transfer){opacity:.64}
-#left .month-day.kind-holiday{color:#ffe6a1;text-decoration:none;font-weight:750}
-:root.paper #left .month-day.kind-holiday{color:#704605}
-#left .month-day.is-today,#left .month-day.is-selected{background:transparent;color:var(--chrono-gold);text-decoration:none;outline:0;opacity:1}
-#left .month-day.is-today::before,#left .month-day.is-selected::after{content:"";position:absolute;inset:8%;border:1px solid var(--chrono-gold);border-radius:50%;pointer-events:none}
-#left .month-day.is-today::before{box-shadow:0 0 9px color-mix(in srgb,var(--chrono-gold) 22%,transparent);animation:chronoBreath 4s ease-in-out infinite}
-#left .month-day.is-selected::after{background:color-mix(in srgb,var(--chrono-gold) 13%,transparent);z-index:-1;border-style:solid}
-#left .month-day.is-today.is-selected::after{inset:14%;border:0}
-#left .month-day.ring-arrive::after{animation:chronoRingMove .32s cubic-bezier(.2,.8,.2,1) both}
-#left .month-day:hover{background:color-mix(in srgb,var(--chrono-season) 12%,transparent)}
-#left .month-day:focus-visible{outline:2px solid var(--chrono-gold);outline-offset:2px}
-#left #clock .cinema-digit::after{display:none!important;content:none!important}
-#left #clock .cinema-digit.digit-arrive{animation:chronoSingleDigit .22s ease-out both}
-#left #clock .clock-seconds.digit-arrive{animation:chronoSecondLight .28s ease-out both}
-#left[data-time-detail="year"] .chrono-clock #clock{font-weight:400;letter-spacing:-.035em}
-#left .chrono-clock #clock{text-shadow:0 0 12px color-mix(in srgb,var(--chrono-gold) 22%,transparent)}
-@keyframes chronoSingleDigit{from{opacity:.55;transform:translateY(1px)}to{opacity:1;transform:none}}
-@keyframes chronoSecondLight{from{opacity:.58;text-shadow:0 0 8px var(--chrono-gold)}to{opacity:.78;text-shadow:none}}
-@keyframes chronoBreath{0%,100%{opacity:.75}50%{opacity:1;box-shadow:0 0 12px color-mix(in srgb,var(--chrono-gold) 32%,transparent)}}
-@keyframes chronoRingMove{from{transform:translate(var(--ring-x),var(--ring-y));opacity:.65}to{transform:none;opacity:1}}
-#left[data-cinema="off"] .month-day::before,#left[data-cinema="off"] .month-day::after,#left[data-cinema="off"] #clock .cinema-digit,#left[data-cinema="quiet"] .month-day::before,#left[data-night="true"] .month-day::before{animation:none}
-@media(prefers-reduced-motion:reduce){#left .month-day::before,#left .month-day::after,#left #clock .cinema-digit{animation:none!important}}
-@media(max-width:760px){#left .month-calendar{margin-top:24px}}
-
-:root.paper #left .month-day.is-today,:root.paper #left .month-day.is-selected{background:transparent;color:var(--chrono-gold);outline:0;box-shadow:none}
-#left[data-cinema="off"] .month-day.ring-arrive::after,#left[data-cinema="quiet"] .month-day.ring-arrive::after{animation:none}
-
-/* Extended annual fan and independent today/selection markers. */
-#left[data-time-detail="year"] .chrono-clock{width:27.3%}
-#left[data-time-detail="year"] .chrono-clock #clock{font-size:clamp(11px,6.2cqw,28px);letter-spacing:-.045em}
-#left .month-nav{margin-bottom:12px}
-#left .chrono-date-status{display:flex;flex-wrap:wrap;justify-content:center;gap:6px 14px;margin:0 0 14px;font:500 clamp(10px,3.1cqw,12px)/1.45 var(--sans);color:var(--muted)}
+#left .month-calendar{width:var(--chrono-width);flex:none;margin:clamp(26px,6cqw,46px) auto 0;padding:0 5px 10px;border:0;background:transparent;--cell-gap:clamp(3px,1.5cqw,8px)}
+#left .month-nav{display:grid;grid-template-columns:34px minmax(0,1fr) 34px;align-items:center;gap:8px;text-align:center;margin-bottom:var(--chrono-space)}
+#left .month-nav button{font:400 22px/1 Manrope,Inter,sans-serif;min-height:36px;padding:5px;border:0;border-radius:50%;background:transparent;color:var(--muted);box-shadow:none}
+#left .month-nav button:hover:not(:disabled){color:var(--chrono-gold)}
+#left #month-heading{font:500 clamp(16px,5.5cqw,23px)/1.3 Manrope,Inter,sans-serif;letter-spacing:-.02em;color:var(--season-dark,var(--ink));border-radius:0;white-space:normal}
+:root.paper #left #month-heading{color:var(--season-light,var(--ink))}
+#left .chrono-date-status{display:flex;flex-wrap:wrap;justify-content:center;gap:5px 12px;margin:0 0 var(--chrono-space);font:400 clamp(10px,3.1cqw,12px)/1.45 Inter,"Segoe UI",sans-serif;color:var(--muted)}
 #left #chrono-today-label{color:var(--chrono-gold)}
-#left #chrono-today-label::before,#left #chrono-selected-label::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:1px;border:1px solid var(--chrono-gold)}
+#left #chrono-today-label::before,#left #chrono-selected-label::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;vertical-align:1px;border:1px solid var(--chrono-gold)}
 #left #chrono-selected-label::before{background:var(--chrono-gold)}
-#left .month-weekdays{margin:0 0 8px}
-#left .month-day.is-today::before{inset:3%;border:2px solid var(--chrono-gold);animation:none;opacity:1;box-shadow:0 0 5px color-mix(in srgb,var(--chrono-gold) 35%,transparent);z-index:1}
-#left .month-day.is-selected::after,#left .month-day.is-today.is-selected::after{inset:13%;border:0;background:var(--chrono-gold);opacity:1;z-index:-1}
-#left .month-day.is-selected,#left .month-day.is-today.is-selected{color:#21180b}
-:root.paper #left .month-day.is-selected,:root.paper #left .month-day.is-today.is-selected{color:#fff6e5}
-#left .month-day.ring-arrive::after{animation:chronoSelectionSettle .24s ease-out both}
-@keyframes chronoSelectionSettle{from{transform:scale(.85)}to{transform:none}}
-#left[data-cinema="off"] .month-day.ring-arrive::after,#left[data-cinema="quiet"] .month-day.ring-arrive::after{animation:none}
-@media(prefers-reduced-motion:reduce){#left .month-day.ring-arrive::after{animation:none!important}}
-
-/* Chronos 6: expanded fan, contrast-aware labels and spacious date rows. */
-#left[data-time-detail="year"] .chrono-clock{width:28.3%}
-#left[data-time-detail="year"] .chrono-clock #clock{font:400 clamp(12px,7cqw,32px)/1 var(--numbers);letter-spacing:-.045em}
-#left .chrono-clock #clock{font-variant-numeric:tabular-nums lining-nums}
-#left #month-heading{font:650 clamp(17px,6.1cqw,24px)/1.3 var(--numbers);letter-spacing:-.028em}
-#left #month-grid{row-gap:clamp(5px,2.2cqw,10px)}
-#left .month-day{aspect-ratio:1;min-height:0;min-width:0;align-self:center;justify-self:stretch}
-#left .month-day.is-past:not(.is-selected):not(.is-today):not(.kind-holiday):not(.kind-weekend):not(.kind-transfer){opacity:1;color:#9baeb9}
+#left .month-weekdays,#left #month-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:var(--cell-gap);text-align:center}
+#left .month-weekdays{margin:0 0 9px;font:500 var(--type-xs)/1.4 Inter,"Segoe UI",sans-serif;color:var(--muted)}
+#left #month-grid{row-gap:clamp(4px,1.9cqw,9px);align-content:start;touch-action:pan-y;min-height:calc(6 * (min(100cqw,510px) - 10px - 6 * var(--cell-gap)) / 7 + 5 * clamp(4px,1.9cqw,9px))}
+#left .month-day,#left .month-blank{min-width:0;min-height:0;aspect-ratio:1}
+#left .month-day{position:relative;isolation:isolate;align-self:center;justify-self:stretch;display:grid;place-items:center;border:0;border-radius:50%;padding:0;background:transparent;color:var(--ink);font:450 clamp(12px,4.4cqw,17px)/1 Manrope,Inter,sans-serif;font-variant-numeric:tabular-nums;transition:background-color .22s ease,color .22s ease}
+#left .month-day.kind-weekend,#left .month-day.kind-transfer{color:#e4b85e;font-weight:500}
+#left .month-day.kind-holiday{color:#ffe6a1;font-weight:600}
+#left .month-day.kind-short{text-decoration:underline;text-underline-offset:3px}
+:root.paper #left .month-day.kind-weekend,:root.paper #left .month-day.kind-transfer{color:#80550f}
+:root.paper #left .month-day.kind-holiday{color:#704605}
+#left .month-day.is-past:not(.is-selected):not(.is-today):not(.kind-holiday):not(.kind-weekend):not(.kind-transfer){color:#9baeb9}
 :root.paper #left .month-day.is-past:not(.is-selected):not(.is-today):not(.kind-holiday):not(.kind-weekend):not(.kind-transfer){color:#586973}
-#left .month-day.is-current-week:not(.is-today):not(.is-selected){background:color-mix(in srgb,var(--chrono-season) 9%,transparent)}
-#left .month-day{transition:color .18s,background-color .18s,transform .18s ease-out}
-@media(hover:hover){#left .month-day:hover{transform:translateY(-1px);background:color-mix(in srgb,var(--chrono-season) 16%,transparent)}}
-#left .month-day.is-today::before{border-radius:50%;aspect-ratio:1;inset:3%;box-sizing:border-box}
-@media(prefers-reduced-motion:reduce){#left .month-day{transition:none;transform:none!important}}
-#left[data-cinema="off"] .month-day,#left[data-cinema="quiet"] .month-day{transition:none;transform:none}
+#left .month-day.is-current-week:not(.is-today):not(.is-selected){background:color-mix(in srgb,var(--chrono-season) 6%,transparent)}
+#left .month-day.is-today{color:var(--chrono-gold)}
+#left .month-day.is-selected{color:#21180b}
+:root.paper #left .month-day.is-selected{color:#fff6e5}
+#left .month-day.is-today::before,#left .month-day.is-selected::after{content:"";position:absolute;border-radius:50%;pointer-events:none;box-sizing:border-box}
+#left .month-day.is-today::before{inset:3%;border:2px solid var(--chrono-gold);z-index:1}
+#left .month-day.is-selected::after{inset:13%;background:var(--chrono-gold);z-index:-1}
+#left .month-day:focus-visible,#left .month-nav button:focus-visible{outline:2px solid var(--chrono-gold);outline-offset:2px}
+@media(hover:hover){#left .month-day:hover:not(.is-selected){background:color-mix(in srgb,var(--chrono-season) 13%,transparent)}}
+#month-rule-notice{color:var(--muted);font:11px/1.4 var(--sans);text-align:center}
+#month-rule-notice:empty{display:none}
+#left.chrono-month-transition #month-grid{animation:imperialMonth .38s cubic-bezier(.2,.8,.2,1) both}
+#left.chrono-month-transition #year-wheel{animation:imperialReveal .38s ease-out both}
+#left .month-day.ring-arrive::after{animation:imperialSelect .24s ease-out both}
+#left #clock .cinema-digit.digit-arrive{animation:imperialDigit .24s ease-out both}
+@keyframes imperialMonth{from{opacity:.6;transform:translateX(var(--month-slide,0px))}to{opacity:1;transform:none}}
+@keyframes imperialReveal{from{opacity:.65}to{opacity:1}}
+@keyframes imperialSelect{from{transform:scale(.9)}to{transform:none}}
+@keyframes imperialDigit{from{opacity:.8}to{opacity:1}}
+#left[data-cinema="off"] *,#left[data-cinema="off"] *::after,#left[data-cinema="quiet"] *,#left[data-cinema="quiet"] *::after,#left[data-night="true"] #clock .cinema-digit{animation:none}
+@media(prefers-reduced-motion:reduce){#left *,#left *::after,#left *::before{animation:none!important;transition:none!important}}
+@media(max-width:760px){main:not(.expanded) #left{padding-top:6px;align-self:start}#left .month-calendar{margin-top:26px}}
+.cinema-option{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0;font:11px var(--sans);color:var(--muted)}
+.cinema-option select{background:var(--surface);padding:4px;color:var(--ink)}.cinema-option input{width:52%;accent-color:var(--accent)}
