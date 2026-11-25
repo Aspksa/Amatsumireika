@@ -69,6 +69,23 @@ class AtlasTest(unittest.TestCase):
                 self.assertGreaterEqual(len({n["folder"] for n in snap["nodes"]}),250)
         self.assertEqual(server.snapshot()["nodes"][0]["id"],a)
 
+    def test_local_chat(self):
+        self.assertEqual(server.get_chat()["messages"],[])
+        server.add_node("Test","Знания")
+        result=server.send_chat("/статус")
+        self.assertFalse(result["model_connected"])
+        self.assertEqual([m["role"] for m in result["messages"]],["user","system"])
+        self.assertIn("Записей: 1",result["messages"][1]["content"])
+        server.send_chat("Привет")
+        server.initialize()
+        history=server.get_chat()["messages"]
+        self.assertEqual(len(history),4)
+        self.assertIn("необходимо подключить",history[-1]["content"])
+        for value in (None," ","x"*3001):
+            with self.assertRaises(ValueError):
+                server.send_chat(value)
+        self.assertEqual(len(server.get_chat()["messages"]),4)
+
     def test_invalid(self):
         with self.assertRaises(ValueError):
             server.add_node("","Знания")
