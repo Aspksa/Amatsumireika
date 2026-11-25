@@ -46,3 +46,6 @@ Home opens the current calendar year automatically with the next-year switch at 
 
 ## v1.2.1 — visibility and upgrade repair
 Start.bat now checks SHA-256 signatures of current TS sources/config and compiled output; recompiles on mismatch and never silently starts a stale bundle. Existing dist files without a seal require one rebuild. Startup failure is explicit. Improved semantic day colors and text contrast in dark and paper palettes; palette redraw and live reduced-motion changes. Chat shows only actual local SQLite processing (no AI model connected). Regression tests cover stale build, paper palette and reduced-motion visibility. No database migration or new dependencies.
+
+### Month calendar
+The radial chart uses a nonlinear day-length profile for a strong open spiral silhouette. A Monday-first month grid below it supports date selection, month navigation, and Today. The grid and spiral share the selected date; the live clock always shows system time. Production statistics remain available below the calendar.

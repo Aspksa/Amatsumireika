@@ -435,7 +435,7 @@ function cinemaSettings(){
 }
 function viewDates(y:number){const all=yearDates(y);return detailMonth===null?all:all.filter(d=>d.getMonth()===detailMonth)}
 function elapsedProduction(year:number,now:Date){const dates=yearDates(year),total=productionStats(dates);if(!total)return null;const past=dates.filter(d=>dayKey(d)<dayKey(now)),done=past.length?productionStats(past):{work:0,h40:0};return done?{remaining:total.work-done.work,doneHours:done.h40}:null}
-function rayLength(i:number,n:number){return 9+57*(i+1)/n}
+function rayLength(i:number,n:number){return 4+62*Math.pow((i+1)/n,2.35)}
 function eased(t:number){t=Math.max(0,Math.min(1,t));return t*t*(3-2*t)}
 function mixHex(a:string,b:string,t:number){const x=parseInt(a.slice(1),16),y=parseInt(b.slice(1),16);return "#"+[16,8,0].map(k=>Math.round(((x>>k)&255)*(1-t)+((y>>k)&255)*t).toString(16).padStart(2,"0")).join("")}
 function animateBirth(now:Date){birthAt=performance.now();birthKey=dayKey(now);if(!cinemaMotion()||calendarAnim||!cinemaOnscreen())return;calendarAnim=true;const tick=()=>{drawYear(new Date());if(performance.now()-birthAt<1400&&cinemaMotion()&&cinemaOnscreen())requestAnimationFrame(tick);else calendarAnim=false};requestAnimationFrame(tick)}
@@ -452,25 +452,62 @@ function drawYear(now=new Date()){
  const point=(angle:number,r:number)=>({x:center+Math.cos(angle)*r,y:center+Math.sin(angle)*r});
  function stroke(a:number,b:number,r:number,color:string,w:number){c.beginPath();c.arc(center,center,r,a,b);c.strokeStyle=color;c.lineWidth=w;c.stroke()}
  const ends:Point[]=[];
- stroke(0,tau,inner-4,base,.8);stroke(0,tau,inner-10,base,.5);stroke(0,tau,140,base,.5);stroke(0,tau,inner-1,dark?"#142631":"#e4e0d6",2.3);stroke(0,tau,142,base,.3);
+ stroke(0,tau,inner-4,base,.8);stroke(0,tau,inner-10,base,.5);
+ for(const radius of [96,118,140]){c.globalAlpha=.26;stroke(0,tau,radius,base,.5)}c.globalAlpha=1;
+ stroke(0,tau,inner-1,dark?"#142631":"#e4e0d6",2.3);
  for(let i=0;i<60;i++){const angle=-Math.PI/2+i*tau/60,p=point(angle,inner-9),q=point(angle,inner-(i%5===0?15:12));c.beginPath();c.moveTo(p.x,p.y);c.lineTo(q.x,q.y);c.strokeStyle=i%5===0?gold:base;c.lineWidth=i%5===0?1:.6;c.stroke()}
  for(let i=0;i<days.length;i++){
   const d=days[i],key=dayKey(d),type=productionDay(d),angle=spiralAngle(i,days.length),passed=key<=today;
   // Ray height grows with the ordinal day; a new ray is filled at local midnight.
   const length=rayLength(i,days.length)*(birth&&key===birthKey?eased(elapsed/800):1),tip=inner+length,p=point(angle,inner),q=point(angle,tip);const col=type?dayPaint(type):base;ends.push(q);const prevType=i>0?productionDay(days[i-1]):type;const blended=mixHex(col,prevType?dayPaint(prevType):col,.12);
-  c.globalAlpha=passed?1:.36;c.strokeStyle=mixHex(col,base,.08);c.lineWidth=detailMonth===null?1.35:3.6;c.beginPath();c.moveTo(p.x,p.y);c.lineTo(q.x,q.y);c.stroke();
-  const mid=point(angle,inner+length*.48);c.strokeStyle=mixHex(blended,gold,.05);c.lineWidth=detailMonth===null?1.02:2.7;c.beginPath();c.moveTo(mid.x,mid.y);c.lineTo(q.x,q.y);c.stroke();c.globalAlpha=1;
+  c.globalAlpha=passed?1:.36;c.strokeStyle=mixHex(col,base,.08);c.lineWidth=detailMonth===null?1.05:4.2;c.beginPath();c.moveTo(p.x,p.y);c.lineTo(q.x,q.y);c.stroke();
+  const mid=point(angle,inner+length*.48);c.strokeStyle=mixHex(blended,gold,.05);c.lineWidth=detailMonth===null?.78:3.2;c.beginPath();c.moveTo(mid.x,mid.y);c.lineTo(q.x,q.y);c.stroke();c.globalAlpha=1;
+  if(d.getDay()===1&&detailMonth===null){const p1=point(angle,tip+2),p2=point(angle,tip+5);cinemaLine(c,p1,p2,gold,.65,.65)}
   if(timeDayCounts.has(key)){const z=point(angle,tip+5);c.fillStyle="#bfa0e8";c.beginPath();c.arc(z.x,z.y,Math.min(2.5,.8+Math.log2(1+(timeDayCounts.get(key)??0))*.25),0,tau);c.fill()}
   if(key===today||key===selected){const k=point(angle,tip+3);if(key===today){c.globalAlpha=.13;c.fillStyle=gold;c.beginPath();c.arc(k.x,k.y,7,0,tau);c.fill();c.globalAlpha=1;stroke(angle-step*.65,angle+step*.65,tip+3,gold,1.7)}c.beginPath();c.arc(k.x,k.y,key===today?2.5:1.6,0,tau);c.fillStyle=key===today?gold:ink;c.fill()}
   if(detailMonth===null&&d.getDate()===1){const p1=point(angle+step/2,inner-1),p2=point(angle+step/2,tip+1);c.strokeStyle=base;c.lineWidth=.7;c.beginPath();c.moveTo(p1.x,p1.y);c.lineTo(p2.x,p2.y);c.stroke()}
  }
- for(let i=1;i<ends.length;i++)cinemaLine(c,ends[i-1],ends[i],gold,.8,dayKey(days[i])<=today?.85:.30);
- if(detailMonth===null){for(let m=0;m<12;m++){const first=days.findIndex(d=>d.getMonth()===m),n=new Date(y,m+1,0).getDate(),angle=-Math.PI/2-(first+n/2)*step,p=point(angle,149);c.font="10px "+mono;c.textAlign="center";c.textBaseline="middle";c.fillStyle=now.getFullYear()===y&&now.getMonth()===m?gold:ink;c.fillText(monthNames[m],p.x,p.y)}}else{for(let i=0;i<days.length;i++){const a=spiralAngle(i,days.length),p=point(a,149);c.font="9px "+mono;c.textAlign="center";c.textBaseline="middle";c.fillStyle=dayKey(days[i])===today?gold:ink;c.fillText(String(i+1),p.x,p.y)}}
+ for(let i=1;i<ends.length;i++)cinemaLine(c,ends[i-1],ends[i],gold,.7,dayKey(days[i])<=today?.75:.26);
+ if(detailMonth===null){for(let m=0;m<12;m++){const first=days.findIndex(d=>d.getMonth()===m),n=new Date(y,m+1,0).getDate(),angle=-Math.PI/2-(first+n/2)*step,p=point(angle,148);const current=now.getFullYear()===y&&now.getMonth()===m;c.font=(current?"bold ":"")+"10px "+mono;c.textAlign="center";c.textBaseline="middle";c.fillStyle=current?gold:ink;c.fillText(monthNames[m],p.x,p.y)}}else{for(let i=0;i<days.length;i++){const a=spiralAngle(i,days.length),p=point(a,149);c.font="9px "+mono;c.textAlign="center";c.textBaseline="middle";c.fillStyle=dayKey(days[i])===today?gold:ink;c.fillText(String(i+1),p.x,p.y)}}
  const progress=days.filter(d=>dayKey(d)<=today).length/days.length;stroke(-Math.PI/2-progress*tau,-Math.PI/2,inner-1,gold,1.1);if(birth&&days.some(d=>dayKey(d)===birthKey)){c.globalAlpha=(1-elapsed/1400)*.55;stroke(0,tau,inner+72*eased(elapsed/1400),gold,1.6);c.globalAlpha=1}
 }
+// Monday-first month layout. Always six weeks, with empty leading/trailing slots.
+function monthCells(year:number,m:number):(Date|null)[]{
+ const first=new Date(year,m,1,12),offset=(first.getDay()+6)%7,count=new Date(year,m+1,0,12).getDate();
+ return Array.from({length:42},(_,i)=>i>=offset&&i<offset+count?new Date(year,m,i-offset+1,12):null);
+}
+function selectMonthDate(d:Date,now=new Date()){
+ if(d.getFullYear()<2026||d.getFullYear()>2100)return;
+ playbackRunning=false;playbackSerial++;historyDate=null;calendarYear=d.getFullYear();autoYear=calendarYear===now.getFullYear();
+ if(detailMonth!==null)detailMonth=d.getMonth();daySelected=dayKey(d);renderCalendar(now);
+}
+function moveMonth(offset:number,now=new Date()){
+ const d=new Date(month.getFullYear(),month.getMonth()+offset,1,12);
+ if(d.getFullYear()<2026||d.getFullYear()>2100)return;
+ const day=Math.min(month.getDate(),new Date(d.getFullYear(),d.getMonth()+1,0,12).getDate());
+ d.setDate(day);selectMonthDate(d,now);
+}
+function renderMonthGrid(current:Date,now:Date){
+ const y=current.getFullYear(),m=current.getMonth(),selected=dayKey(current),today=dayKey(now),root=$("month-grid");
+ text($("month-heading"),current.toLocaleDateString("ru-RU",{month:"long",year:"numeric"}));
+ $<HTMLButtonElement>("month-prev").disabled=y===2026&&m===0;
+ $<HTMLButtonElement>("month-next").disabled=y===2100&&m===11;
+ root.replaceChildren();
+ for(const d of monthCells(y,m)){
+  if(!d){const blank=document.createElement("span");blank.className="month-blank";blank.setAttribute("aria-hidden","true");root.append(blank);continue}
+  const k=dayKey(d),b=document.createElement("button");b.type="button";b.className="month-day";
+  if(k===today){b.classList.add("is-today");b.setAttribute("aria-current","date")}
+  if(k===selected)b.classList.add("is-selected");
+  b.setAttribute("aria-pressed",String(k===selected));b.setAttribute("aria-label",d.toLocaleDateString("ru-RU",{weekday:"long",day:"numeric",month:"long",year:"numeric"}));
+  text(b,String(d.getDate()));b.onclick=()=>{selectMonthDate(d);const next=root.children[(d.getDay()+6)%7+7*Math.floor(((new Date(y,m,1,12).getDay()+6)%7+d.getDate()-1)/7)] as HTMLElement|undefined;next?.focus()};root.append(b);
+ }
+}
+$("month-prev").onclick=()=>moveMonth(-1);
+$("month-next").onclick=()=>moveMonth(1);
+$("month-today").onclick=()=>chooseCalendarYear(null);
 function renderCalendar(now=new Date()){
  const year=displayedYear(now),days=yearDates(year),stats=productionStats(days),current=daySelected.slice(0,4)===String(year)?new Date(daySelected+"T12:00:00"):new Date(year,0,1,12);
- const selected=dayKey(current);daySelected=selected;month=current;
+ const selected=dayKey(current);daySelected=selected;month=current;renderMonthGrid(current,now);
 
  const input=$<HTMLInputElement>("selected-date");input.min=year+"-01-01";input.max=year+"-12-31";input.value=selected;
  const shown=viewDates(year);text($("year-progress"),shown.filter(d=>dayKey(d)<=dayKey(timeReference(now))).length+" / "+shown.length);text($("chrono-level"),detailMonth===null?"":monthNames[detailMonth]);$("chrono-back").hidden=detailMonth===null;$("chrono-level-wrap").hidden=detailMonth===null;

@@ -37,6 +37,14 @@ async function main(){
   assert.equal(await evaluate('document.querySelector("#time-shape")===null'),true);
   assert.equal(await evaluate('document.querySelector("#clock-weekday").textContent'),await evaluate('new Date().toLocaleDateString("ru-RU",{weekday:"long"})'));
   assert.equal(await evaluate('document.querySelector("#clock-date").textContent'),await evaluate('new Date().toLocaleDateString("ru-RU",{day:"numeric",month:"long"})'));
+  assert.equal(await evaluate('document.querySelector("#month-grid").children.length'),42);
+  assert.equal(await evaluate('document.querySelectorAll("#month-grid .is-today").length'),1);
+  const oldHeading=await evaluate('document.querySelector("#month-heading").textContent');
+  await evaluate('document.querySelector("#month-next").click()');
+  assert.notEqual(await evaluate('document.querySelector("#month-heading").textContent'),oldHeading);
+  await evaluate('document.querySelector("#month-today").click()');
+  assert.equal(await evaluate('document.querySelector("#month-heading").textContent'),oldHeading);
+  assert.equal(await evaluate('document.querySelectorAll("#month-grid .is-selected.is-today").length'),1);
   assert.equal(a.homeDetails,0);assert.equal(a.yearButtons,0);assert.equal(a.year,a.localYear);
   assert.ok(a.lit>80&&b.lit>80,"visible non-transparent pixels");
   assert.ok(b.frame>a.frame+3&&a.hash!==b.hash,"Canvas actually changes");
