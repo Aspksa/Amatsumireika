@@ -193,8 +193,9 @@ def list_docs(path,q="",trash=False,where="",after=0):
 def preview(path,ident):
     with closing(connect(path)) as db:
         r=get(db,ident)
-        exists=path_for(path,r["blob"]).is_file()
-        return {**meta(r),"text":r["content"][:MAX_TEXT] if r["extract_status"]=="indexed" else "","exists":exists,"truncated":len(r["content"])>=MAX_TEXT}
+        original=path_for(path,r["blob"])
+        exists=original.is_file() and original.stat().st_size==r["size"]
+        return {**meta(r),"text":r["content"][:MAX_TEXT] if exists and r["extract_status"]=="indexed" else "","exists":exists,"truncated":len(r["content"])>=MAX_TEXT}
 def binary(path,ident):
     with closing(connect(path)) as db:
         r=get(db,ident)
@@ -220,8 +221,10 @@ def action(path,data):
             if not file.is_file() or file.stat().st_size!=r["size"] or hashlib.sha256(file.read_bytes()).hexdigest()!=r["sha256"]:raise ValueError("Файл отсутствует или повреждён")
             collision(db,r,r["folder"])
             db.execute("UPDATE documents SET deleted=NULL WHERE id=?",(r["id"],))
-            if memory.table(db,"document_jobs"):
-                db.execute("UPDATE document_jobs SET status=\x27queued\x27,error=\x27\x27 WHERE document_id=? AND status=\x27failed\x27",(r["id"],))
+            if memory.table(db,"document_jobs") and r["extract_status"] in ("extraction_failed","queued"):
+                import document_workspace
+                document_workspace.enqueue(db,r["id"])
+                db.execute("UPDATE documents SET extract_status='queued',content='' WHERE id=?",(r["id"],))
         elif kind=="move" and not r["deleted"]:
             where=folder(data.get("folder"))
             collision(db,r,where)

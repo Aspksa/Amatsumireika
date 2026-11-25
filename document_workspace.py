@@ -102,8 +102,8 @@ def graph(path,after=0,query="",where="",trash=False):
         return {"nodes":[{**dict(r),"degree":degrees[r["node_id"]],"outside":outside[r["node_id"]]} for r in rows],"edges":links,"versions":versions,"next":rows[-1]["id"] if more else None,"total":db.execute("SELECT COUNT(*) FROM documents WHERE "+criteria,args).fetchone()[0],"revision":db.execute("SELECT version FROM atlas_revision WHERE id=1").fetchone()[0]}
 def details(path,ident):
     with closing(doc.connect(path)) as db:
-        r=doc.get(db,ident)
         db.execute("BEGIN")
+        r=doc.get(db,ident)
         q=tags(r["content"]) if r["extract_status"]=="indexed" else []
         candidates=[]
         if q:
@@ -119,16 +119,19 @@ def details(path,ident):
         job=db.execute("SELECT status,attempts,error,updated FROM document_jobs WHERE document_id=?",(ident,)).fetchone()
         # structured claims are compared only when explicit labels exist
         claims={}
-        for line in r["content"].splitlines()[:2000]:
+        for line in (r["content"] if r["extract_status"]=="indexed" else "").splitlines()[:2000]:
             m=re.fullmatch(r"\s*факт\s*:\s*([^=:]{1,80})\s*[=:]\s*(.{1,120})",line,re.I)
             if m:claims.setdefault(memory.norm(m[1]),set()).add(memory.norm(m[2]))
         evidence=[]
         for subject,values in list(claims.items())[:20]:
             if len(values)>1:evidence.append({"subject":subject,"document":ident,"kind":"внутреннее расхождение","values":sorted(values)})
-            for other in candidates[:8]:
-                row=db.execute("SELECT content FROM documents WHERE id=?",(other["id"],)).fetchone()
-                if not row:continue
-                for line in row[0].splitlines()[:2000]:
+            subject_terms=sorted(memory.terms(subject))
+            if not subject_terms:continue
+            marks=",".join("?" for _ in subject_terms)
+            others=db.execute("SELECT d.id,d.content FROM documents d JOIN (SELECT DISTINCT document_id FROM document_terms WHERE term IN ("+marks+")) t ON t.document_id=d.id WHERE d.id<>? AND d.deleted IS NULL AND d.extract_status='indexed' ORDER BY d.id LIMIT 100",subject_terms+[ident])
+            for other in others:
+                if len(evidence)>=40:break
+                for line in other["content"].splitlines()[:2000]:
                     m=re.fullmatch(r"\s*факт\s*:\s*([^=:]{1,80})\s*[=:]\s*(.{1,120})",line,re.I)
                     if m and memory.norm(m[1])==subject:
                         value=memory.norm(m[2])

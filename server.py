@@ -5,6 +5,7 @@ import gateway
 import cognitive
 import evolution
 import documents
+import document_backup
 import document_workspace
 import memory_engine as memory
 import budget
@@ -688,6 +689,9 @@ class Handler(BaseHTTPRequestHandler):
             data=json.loads(self.rfile.read(n))
             if not isinstance(data,dict):
                 raise ValueError("Expected object")
+            if self.path=="/api/workspace/backup":
+                if data!={"confirm":True}:raise ValueError("Подтвердите локальное резервирование")
+                self.reply(200,document_backup.backup(DB));return
             if self.path=="/api/workspace/action":
                 self.reply(200,document_workspace.mutate(DB,data));return
             if self.path=="/api/workspace/ask":
