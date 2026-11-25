@@ -1,10 +1,13 @@
-param([Parameter(Mandatory=$true)][string]$Path)
+param([Parameter(Mandatory=$true)][string]$Path,[switch]$Thumbnail)
 $ErrorActionPreference='Stop'
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
 Add-Type -AssemblyName System.Runtime.WindowsRuntime
 $null=[Windows.Storage.StorageFile,Windows.Storage,ContentType=WindowsRuntime]
 $null=[Windows.Graphics.Imaging.BitmapDecoder,Windows.Graphics.Imaging,ContentType=WindowsRuntime]
 $null=[Windows.Graphics.Imaging.SoftwareBitmap,Windows.Graphics.Imaging,ContentType=WindowsRuntime]
+$null=[Windows.Graphics.Imaging.BitmapTransform,Windows.Graphics.Imaging,ContentType=WindowsRuntime]
+$null=[Windows.Graphics.Imaging.BitmapEncoder,Windows.Graphics.Imaging,ContentType=WindowsRuntime]
+$null=[Windows.Storage.Streams.DataReader,Windows.Storage.Streams,ContentType=WindowsRuntime]
 $null=[Windows.Media.Ocr.OcrEngine,Windows.Foundation,ContentType=WindowsRuntime]
 $null=[Windows.Media.Ocr.OcrResult,Windows.Foundation,ContentType=WindowsRuntime]
 $null=[Windows.Storage.Streams.IRandomAccessStream,Windows.Storage.Streams,ContentType=WindowsRuntime]
@@ -21,6 +24,29 @@ function Await($operation,[Type]$type){
 function AwaitAction($operation){
     $task=$action.Invoke($null,@($operation))
     $task.GetAwaiter().GetResult()
+}
+if($Thumbnail){
+    $file=Await ([Windows.Storage.StorageFile]::GetFileFromPathAsync($Path)) ([Windows.Storage.StorageFile])
+    $pdf=Await ([Windows.Data.Pdf.PdfDocument]::LoadFromFileAsync($file)) ([Windows.Data.Pdf.PdfDocument])
+    if($pdf.PageCount -eq 0){throw 'PDF contains no pages'}
+    $page=$pdf.GetPage(0)
+    $stream=New-Object Windows.Storage.Streams.InMemoryRandomAccessStream
+    try{
+        $options=New-Object Windows.Data.Pdf.PdfPageRenderOptions
+        $options.DestinationWidth=[uint32][Math]::Max(1,[Math]::Min(320,320*$page.Size.Width/[Math]::Max(1,$page.Size.Height)))
+        $options.DestinationHeight=[uint32][Math]::Max(1,[Math]::Min(320,320*$page.Size.Height/[Math]::Max(1,$page.Size.Width)))
+        $options.BitmapEncoderId=[Windows.Graphics.Imaging.BitmapEncoder]::PngEncoderId
+        AwaitAction ($page.RenderToStreamAsync($stream,$options))
+        if($stream.Size -gt 1048576){throw 'Thumbnail exceeds limit'}
+        $reader=New-Object Windows.Storage.Streams.DataReader($stream.GetInputStreamAt(0))
+        try{
+            $count=Await ($reader.LoadAsync([uint32]$stream.Size)) ([uint32])
+            $bytes=New-Object byte[] $count
+            $reader.ReadBytes($bytes)
+            [Convert]::ToBase64String($bytes)
+        }finally{$reader.Dispose()}
+    }finally{$stream.Dispose();$page.Dispose()}
+    exit
 }
 $engine=[Windows.Media.Ocr.OcrEngine]::TryCreateFromUserProfileLanguages()
 if($null -eq $engine){throw 'Windows OCR language pack unavailable'}
