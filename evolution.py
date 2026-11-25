@@ -166,13 +166,13 @@ def semantic_candidates(path,data):
 def page(path,after=0,limit=200):
     if type(after) is not int or after<0 or type(limit) is not int or not 1<=limit<=500:raise ValueError("Invalid page")
     with closing(connect(path)) as db:
-        rows=[dict(r) for r in db.execute("SELECT id,title,category,folder,created_at FROM nodes WHERE id>? ORDER BY id LIMIT ?",(after,limit+1))]
+        rows=[dict(r) for r in db.execute("SELECT id,title,category,folder,created_at FROM nodes WHERE id>? AND NOT EXISTS(SELECT 1 FROM documents d WHERE d.node_id=nodes.id AND d.deleted IS NOT NULL) ORDER BY id LIMIT ?",(after,limit+1))]
         more=len(rows)>limit;rows=rows[:limit]
         return {"nodes":rows,"next":rows[-1]["id"] if more else None}
 def report(path):
     with closing(connect(path)) as db:
         db.execute("BEGIN")
-        return {"clusters":[dict(r) for r in db.execute("SELECT category,folder,COUNT(*) count FROM nodes GROUP BY category,folder ORDER BY count DESC,category,folder LIMIT 80")],
+        return {"clusters":[dict(r) for r in db.execute("SELECT category,folder,COUNT(*) count FROM nodes WHERE NOT EXISTS(SELECT 1 FROM documents d WHERE d.node_id=nodes.id AND d.deleted IS NOT NULL) GROUP BY category,folder ORDER BY count DESC,category,folder LIMIT 80")],
                 "conflicts":conflict_rows(db),
                 "versions":[dict(r) for r in db.execute("SELECT v.*,n.title FROM evo_versions v JOIN nodes n ON n.id=v.node_id ORDER BY v.id DESC LIMIT 40")],
                 "due":[dict(r) for r in db.execute("SELECT r.node_id,n.title,r.checked,r.days FROM evo_review r JOIN nodes n ON n.id=r.node_id WHERE datetime(r.checked,'+'||r.days||' days')<=CURRENT_TIMESTAMP ORDER BY r.checked LIMIT 40")],

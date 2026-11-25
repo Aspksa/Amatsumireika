@@ -16,7 +16,7 @@ def init(db):
     db.execute("""CREATE TABLE IF NOT EXISTS document_versions(child INTEGER PRIMARY KEY REFERENCES documents(id),parent INTEGER NOT NULL REFERENCES documents(id),at TEXT NOT NULL,CHECK(child<>parent))""")
     db.execute("CREATE INDEX IF NOT EXISTS document_versions_parent ON document_versions(parent)")
 def enqueue(db,ident):
-    db.execute("INSERT INTO document_jobs(document_id,status,updated) VALUES(?,'queued',?) ON CONFLICT(document_id) DO UPDATE SET status='queued',updated=excluded.updated,error='',attempts=0",(ident,doc.now()))
+    db.execute("INSERT INTO document_jobs(document_id,status,updated) VALUES(?,'queued',?) ON CONFLICT(document_id) DO UPDATE SET status='queued',updated=excluded.updated,error=''",(ident,doc.now()))
 def step(path):
     if not LOCK.acquire(False):return False
     try:
@@ -43,8 +43,14 @@ def step(path):
         except Exception:
             logging.exception("Document indexing failed")
             with closing(doc.connect(path)) as db,db:
-                db.execute("UPDATE document_jobs SET status='failed',updated=?,error='Файл недоступен или ошибка обработки' WHERE document_id=?",(doc.now(),ident))
-                db.execute("UPDATE documents SET extract_status='extraction_failed' WHERE id=?",(ident,))
+                item=doc.get(db,ident,False)
+                if item["deleted"]:
+                    db.execute("UPDATE document_jobs SET status='queued',updated=?,error='' WHERE document_id=?",(doc.now(),ident))
+                else:
+                    db.execute("UPDATE document_jobs SET status='failed',updated=?,error='Файл недоступен или ошибка обработки' WHERE document_id=?",(doc.now(),ident))
+                    db.execute("UPDATE documents SET extract_status='extraction_failed',content='' WHERE id=?",(ident,))
+                    db.execute("DELETE FROM document_terms WHERE document_id=?",(ident,))
+                    db.executemany("INSERT OR IGNORE INTO document_terms VALUES(?,?)",((t,ident) for t in memory.terms(item["name"]+" "+item["folder"]) if len(t)<=80))
         return True
     finally:LOCK.release()
 @contextmanager
@@ -65,60 +71,73 @@ def words(text):
     return [w for w in re.findall(r"\w{3,}",memory.norm(text)) if w not in memory.STOP]
 def tags(text):
     return [w for w,_ in Counter(words(text)).most_common(10)]
-def graph(path,after=0):
-    if type(after) is not int or after<0:raise ValueError("Invalid cursor")
+def graph(path,after=0,query="",where="",trash=False):
+    if type(after) is not int or after<0 or not isinstance(query,str) or len(query)>300:raise ValueError("Invalid cursor or query")
+    where=doc.folder(where)
     with closing(doc.connect(path)) as db:
         db.execute("BEGIN")
-        rows=db.execute("SELECT id,node_id,name,folder,size,extract_status FROM documents WHERE deleted IS NULL AND id>? ORDER BY id LIMIT 201",(after,)).fetchall()
-        more=len(rows)>200;rows=rows[:200];ids=[r["node_id"] for r in rows];links=[]
-        if ids:
+        criteria="deleted IS "+("NOT NULL" if trash else "NULL")
+        args=[]
+        if where:
+            criteria+=" AND (folder=? OR substr(folder,1,length(?)+1)=?||'/')";args.extend([where,where,where])
+        terms=sorted(memory.terms(query))
+        if terms:
+            criteria+=" AND (id IN (SELECT document_id FROM document_terms WHERE term IN ("+",".join("?" for _ in terms)+")) OR instr(memory_norm(name),?)>0)";args+=terms+[memory.norm(query)]
+        elif query.strip():
+            criteria+=" AND instr(memory_norm(name),?)>0";args.append(memory.norm(query))
+        rows=db.execute("SELECT id,node_id,name,folder,size,extract_status FROM documents WHERE "+criteria+" AND id>? ORDER BY id LIMIT 201",args+[after]).fetchall()
+        more=len(rows)>200;rows=rows[:200];ids=[r["node_id"] for r in rows];links=[];degrees=Counter();outside=Counter();versions=[]
+        if ids and not trash:
             marks=",".join("?" for _ in ids)
-            for row in db.execute("SELECT source,target FROM edges WHERE source IN ("+marks+") AND target IN ("+marks+") ORDER BY source,target LIMIT 3000",ids+ids):
-                links.append({"source":row[0],"target":row[1]})
-        # Degree includes real external memory links, excluding trashed documents.
-        nodes=[]
-        for r in rows:
-            degree=db.execute("""SELECT COUNT(*) FROM edges e WHERE (source=? OR target=?) AND NOT EXISTS(SELECT 1 FROM documents d WHERE d.deleted IS NOT NULL AND d.node_id IN(e.source,e.target))""",(r["node_id"],r["node_id"])).fetchone()[0]
-            nodes.append({**dict(r),"degree":degree})
-        versions=[]
-        if rows:
+            active="NOT EXISTS(SELECT 1 FROM documents d WHERE d.deleted IS NOT NULL AND d.node_id IN(e.source,e.target))"
+            for row in db.execute("SELECT e.source,e.target FROM edges e WHERE (e.source IN ("+marks+") OR e.target IN ("+marks+")) AND "+active,ids+ids):
+                a,b=row;degrees[a]+=1;degrees[b]+=1
+                if a in ids and b in ids:
+                    if len(links)<3000:links.append({"source":a,"target":b})
+                else:
+                    if a in ids:outside[a]+=1
+                    if b in ids:outside[b]+=1
             keys=[r["id"] for r in rows];marks=",".join("?" for _ in keys)
             versions=[dict(r) for r in db.execute("SELECT child,parent FROM document_versions WHERE child IN ("+marks+") AND parent IN ("+marks+")",keys+keys)]
-        return {"nodes":nodes,"edges":links,"versions":versions,"next":rows[-1]["id"] if more else None,"total":db.execute("SELECT COUNT(*) FROM documents WHERE deleted IS NULL").fetchone()[0]}
+        return {"nodes":[{**dict(r),"degree":degrees[r["node_id"]],"outside":outside[r["node_id"]]} for r in rows],"edges":links,"versions":versions,"next":rows[-1]["id"] if more else None,"total":db.execute("SELECT COUNT(*) FROM documents WHERE "+criteria,args).fetchone()[0],"revision":db.execute("SELECT version FROM atlas_revision WHERE id=1").fetchone()[0]}
 def details(path,ident):
     with closing(doc.connect(path)) as db:
+        db.execute("BEGIN")
         r=doc.get(db,ident)
-        q=tags(r["content"])
+        q=tags(r["content"]) if r["extract_status"]=="indexed" else []
         candidates=[]
         if q:
             marks=",".join("?" for _ in q)
-            rows=db.execute("SELECT d.id,d.name,d.node_id,d.folder,COUNT(*) overlap FROM document_terms t JOIN documents d ON d.id=t.document_id WHERE d.deleted IS NULL AND d.id<>? AND t.term IN ("+marks+") GROUP BY d.id ORDER BY overlap DESC,d.id LIMIT 20",[ident]+q)
+            rows=db.execute("SELECT d.id,d.name,d.node_id,d.folder,COUNT(*) overlap FROM document_terms t JOIN documents d ON d.id=t.document_id WHERE d.deleted IS NULL AND d.extract_status=\x27indexed\x27 AND d.id<>? AND t.term IN ("+marks+") GROUP BY d.id ORDER BY overlap DESC,d.id LIMIT 20",[ident]+q)
             for other in rows:
                 candidates.append({**dict(other),"score":round(other["overlap"]/len(q),3)})
         links=[dict(x) for x in db.execute("""SELECT n.id,n.title,n.category FROM edges e JOIN nodes n ON n.id=CASE WHEN e.source=? THEN e.target ELSE e.source END WHERE (e.source=? OR e.target=?) AND NOT EXISTS(SELECT 1 FROM documents d WHERE d.node_id=n.id AND d.deleted IS NOT NULL) ORDER BY n.id LIMIT 100""",(r["node_id"],r["node_id"],r["node_id"]))]
-        source="document:"+str(ident)
-        candidates_memory=[dict(x) for x in db.execute("SELECT id,title,kind,state FROM cog_candidates WHERE source=? ORDER BY id DESC LIMIT 50",(source,))]
-        memories=[dict(x) for x in db.execute("SELECT n.id,n.title,m.kind FROM cog_memory m JOIN nodes n ON n.id=m.node_id WHERE m.source=? AND m.node_id<>? ORDER BY n.id LIMIT 50",(source,r["node_id"]))]
+        candidates_memory=[dict(x) for x in db.execute("SELECT c.id,c.title,c.kind,c.state FROM cog_candidates c JOIN document_sources s ON s.fingerprint=c.fingerprint WHERE s.document_id=? ORDER BY c.id DESC LIMIT 50",(ident,))]
+        memories=[dict(x) for x in db.execute("SELECT DISTINCT n.id,n.title,m.kind FROM document_sources s JOIN nodes n ON n.id=s.node_id JOIN cog_memory m ON m.node_id=n.id WHERE s.document_id=? ORDER BY n.id LIMIT 50",(ident,))]
+        linked_ids={x["id"] for x in links}
         versions=[dict(x) for x in db.execute("SELECT v.child,v.parent,p.name parent_name,c.name child_name FROM document_versions v JOIN documents p ON p.id=v.parent JOIN documents c ON c.id=v.child WHERE v.parent=? OR v.child=? ORDER BY v.child LIMIT 50",(ident,ident))]
         job=db.execute("SELECT status,attempts,error,updated FROM document_jobs WHERE document_id=?",(ident,)).fetchone()
         # structured claims are compared only when explicit labels exist
         claims={}
-        for line in r["content"].splitlines()[:2000]:
+        for line in (r["content"] if r["extract_status"]=="indexed" else "").splitlines()[:2000]:
             m=re.fullmatch(r"\s*факт\s*:\s*([^=:]{1,80})\s*[=:]\s*(.{1,120})",line,re.I)
             if m:claims.setdefault(memory.norm(m[1]),set()).add(memory.norm(m[2]))
         evidence=[]
         for subject,values in list(claims.items())[:20]:
             if len(values)>1:evidence.append({"subject":subject,"document":ident,"kind":"внутреннее расхождение","values":sorted(values)})
-            for other in candidates[:8]:
-                row=db.execute("SELECT content FROM documents WHERE id=?",(other["id"],)).fetchone()
-                if not row:continue
-                for line in row[0].splitlines()[:2000]:
+            subject_terms=sorted(memory.terms(subject))
+            if not subject_terms:continue
+            marks=",".join("?" for _ in subject_terms)
+            others=db.execute("SELECT d.id,d.content FROM documents d JOIN (SELECT DISTINCT document_id FROM document_terms WHERE term IN ("+marks+")) t ON t.document_id=d.id WHERE d.id<>? AND d.deleted IS NULL AND d.extract_status='indexed' ORDER BY d.id LIMIT 100",subject_terms+[ident])
+            for other in others:
+                if len(evidence)>=40:break
+                for line in other["content"].splitlines()[:2000]:
                     m=re.fullmatch(r"\s*факт\s*:\s*([^=:]{1,80})\s*[=:]\s*(.{1,120})",line,re.I)
                     if m and memory.norm(m[1])==subject:
                         value=memory.norm(m[2])
                         evidence.append({"subject":subject,"document":other["id"],"kind":"совпадение" if value in values else "возможное противоречие","values":[value]})
                         break
-        return {"tags":q,"suggestions":candidates,"links":links,"candidates":candidates_memory,"memories":memories,"versions":versions,"job":dict(job) if job else None,"evidence":evidence[:40],"words":len(words(r["content"])),"characters":len(r["content"]),"folder_hint":candidates[0]["folder"] if candidates and candidates[0]["score"]>=.3 else ""}
+        return {"tags":q,"suggestions":[c for c in candidates if c["node_id"] not in linked_ids],"links":links,"candidates":candidates_memory,"memories":memories,"versions":versions,"job":dict(job) if job else None,"evidence":evidence[:40],"words":len(words(r["content"])),"characters":len(r["content"]),"folder_hint":candidates[0]["folder"] if candidates and candidates[0]["score"]>=.3 else ""}
 def mutate(path,data):
     action=data.get("action")
     ident=data.get("id")
@@ -140,7 +159,9 @@ def mutate(path,data):
             job=db.execute("SELECT status FROM document_jobs WHERE document_id=?",(ident,)).fetchone()
             if job and job[0]=="running":raise ValueError("Индексация уже выполняется")
             enqueue(db,ident)
-            db.execute("UPDATE documents SET extract_status='queued' WHERE id=?",(ident,))
+            db.execute("UPDATE documents SET extract_status='queued',content='' WHERE id=?",(ident,))
+            db.execute("DELETE FROM document_terms WHERE document_id=?",(ident,))
+            db.executemany("INSERT OR IGNORE INTO document_terms VALUES(?,?)",((t,ident) for t in memory.terms(r["name"]+" "+r["folder"]) if len(t)<=80))
         elif action=="version":
             parent=data.get("parent")
             p=doc.get(db,parent)
@@ -149,6 +170,7 @@ def mutate(path,data):
             if db.execute("SELECT 1 FROM document_versions WHERE child=?",(ident,)).fetchone():raise ValueError("Предыдущая редакция уже установлена")
             db.execute("INSERT INTO document_versions VALUES(?,?,?)",(ident,parent,doc.now()))
             db.execute("INSERT OR IGNORE INTO edges VALUES(?,?)",tuple(sorted((r["node_id"],p["node_id"]))))
+            db.execute("INSERT INTO cog_goals(code,title) VALUES(?,?) ON CONFLICT(code) DO UPDATE SET state=\x27suggested\x27",("document-version:"+str(ident),"Проверить знания предыдущей редакции #"+str(parent)))
             doc.event(db,ident,"Установлена предыдущая редакция",r["node_id"])
         else:raise ValueError("Unknown action")
     return {"ok":True}
@@ -160,9 +182,10 @@ def excerpts(path,query,ident=None):
         if ident is not None: rows=[doc.get(db,ident)]
         else:
             marks=",".join("?" for _ in terms)
-            rows=db.execute("SELECT d.* FROM documents d JOIN (SELECT document_id,COUNT(*) hits FROM document_terms WHERE term IN ("+marks+") GROUP BY document_id ORDER BY hits DESC LIMIT 30) t ON d.id=t.document_id WHERE d.deleted IS NULL ORDER BY t.hits DESC,d.id",tuple(sorted(terms))).fetchall()
+            rows=db.execute("SELECT d.* FROM documents d JOIN (SELECT t.document_id,COUNT(*) hits FROM document_terms t JOIN documents active ON active.id=t.document_id WHERE active.deleted IS NULL AND active.extract_status=\x27indexed\x27 AND term IN ("+marks+") GROUP BY t.document_id ORDER BY hits DESC LIMIT 30) t ON d.id=t.document_id WHERE d.deleted IS NULL ORDER BY t.hits DESC,d.id",tuple(sorted(terms))).fetchall()
         result=[]
         for row in rows:
+            if row["extract_status"]!="indexed":continue
             # Preserve exact source fragments; no synthetic answer or cloud requests.
             best=[]
             for line in row["content"].splitlines()[:4000]:
@@ -176,6 +199,7 @@ def excerpts(path,query,ident=None):
         return {"sources":result[:8]}
 def analytics(path):
     with closing(doc.connect(path)) as db:
+        db.execute("BEGIN")
         stats=dict(db.execute("""SELECT COUNT(*) count,COALESCE(SUM(size),0) bytes,COALESCE(SUM(extract_status='indexed'),0) AS "indexed",COALESCE(SUM(extract_status='preview_only'),0) AS preview_only FROM documents WHERE deleted IS NULL""").fetchone())
         formats=Counter();volumes=Counter()
         for row in db.execute("SELECT name,size FROM documents WHERE deleted IS NULL"):
@@ -183,5 +207,21 @@ def analytics(path):
         days=[dict(r) for r in db.execute("SELECT substr(created,1,10) day,COUNT(*) count FROM documents WHERE deleted IS NULL GROUP BY day ORDER BY day DESC LIMIT 30")]
         jobs={r[0]:r[1] for r in db.execute("SELECT j.status,COUNT(*) FROM document_jobs j JOIN documents d ON d.id=j.document_id WHERE d.deleted IS NULL GROUP BY j.status")}
         isolated=db.execute("SELECT COUNT(*) FROM documents d WHERE d.deleted IS NULL AND NOT EXISTS(SELECT 1 FROM edges e WHERE (e.source=d.node_id OR e.target=d.node_id) AND NOT EXISTS(SELECT 1 FROM documents x WHERE x.deleted IS NOT NULL AND x.node_id IN(e.source,e.target)))").fetchone()[0]
-        knowledge=db.execute("SELECT COUNT(*) FROM cog_memory m JOIN documents d ON m.source='document:'||d.id WHERE m.node_id<>d.node_id AND d.deleted IS NULL").fetchone()[0]
-        return {**stats,"formats":[{"format":k,"count":v,"bytes":volumes[k]} for k,v in formats.most_common()],"days":days,"jobs":jobs,"isolated":isolated,"knowledge":knowledge,"versions":db.execute("SELECT COUNT(*) FROM document_versions").fetchone()[0],"events":[dict(r) for r in db.execute("SELECT at,kind,document_id FROM document_events ORDER BY id DESC LIMIT 20")]}
+        knowledge=db.execute("SELECT COUNT(DISTINCT s.node_id) FROM document_sources s JOIN documents d ON s.document_id=d.id WHERE d.deleted IS NULL AND s.node_id IS NOT NULL").fetchone()[0]
+        return {**stats,"physical_bytes":db.execute("SELECT COALESCE(SUM(size),0) FROM documents").fetchone()[0],"formats":[{"format":k,"count":v,"bytes":volumes[k]} for k,v in formats.most_common()],"days":days,"jobs":jobs,"isolated":isolated,"knowledge":knowledge,"versions":db.execute("SELECT COUNT(*) FROM document_versions").fetchone()[0],"events":[dict(r) for r in db.execute("SELECT at,kind,document_id FROM document_events ORDER BY id DESC LIMIT 20")]}
+
+def revision(path):
+    with closing(doc.connect(path)) as db:
+        return {"revision":db.execute("SELECT version FROM atlas_revision WHERE id=1").fetchone()[0]}
+def quality(path):
+    with closing(doc.connect(path)) as db:
+        db.execute("BEGIN")
+        wrong_index=[];wrong_metadata=[];missing_edges=[]
+        for row in db.execute("SELECT d.id,d.name,d.folder,d.content,d.extract_status,n.title,n.folder node_folder FROM documents d JOIN nodes n ON n.id=d.node_id"):
+            expected={t for t in memory.terms(row["name"]+" "+row["folder"]+" "+(row["content"] if row["extract_status"]=="indexed" else "")) if len(t)<=80}
+            actual={r[0] for r in db.execute("SELECT term FROM document_terms WHERE document_id=?",(row["id"],))}
+            if actual!=expected:wrong_index.append(row["id"])
+            if row["name"]!=row["title"] or row["folder"]!=row["node_folder"]:wrong_metadata.append(row["id"])
+        for row in db.execute("SELECT s.node_id,d.node_id FROM document_sources s JOIN documents d ON d.id=s.document_id WHERE s.node_id IS NOT NULL AND s.node_id<>d.node_id"):
+            if not db.execute("SELECT 1 FROM edges WHERE source=? AND target=?",tuple(sorted(row))).fetchone():missing_edges.append(list(row))
+        return {"foreign_keys":sum(1 for _ in db.execute("PRAGMA foreign_key_check")),"index_mismatch":wrong_index,"metadata_mismatch":wrong_metadata,"source_edges_missing":missing_edges}

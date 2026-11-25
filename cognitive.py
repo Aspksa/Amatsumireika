@@ -66,7 +66,15 @@ def proposal(db,kind,title,source,subject="",confidence=.7,priority=1):
     title=title.strip()
     if kind not in TYPES or not safe(title): return
     fp=digest(kind+"\0"+title)
-    if db.execute("SELECT 1 FROM cog_memory WHERE fingerprint=?",(fp,)).fetchone() or memory.existing(db,title,TYPES[kind]): return
+    known=db.execute("SELECT node_id FROM cog_memory WHERE fingerprint=?",(fp,)).fetchone() or memory.existing(db,title,TYPES[kind])
+    if source.startswith("document:") and memory.table(db,"document_sources"):
+        ident=int(source.split(":",1)[1])
+        db.execute("INSERT OR IGNORE INTO document_sources VALUES(?,?,?)",(fp,ident,known[0] if known else None))
+        if known:
+            db.execute("UPDATE document_sources SET node_id=? WHERE fingerprint=? AND document_id=?",(known[0],fp,ident))
+            origin=db.execute("SELECT node_id FROM documents WHERE id=? AND deleted IS NULL",(ident,)).fetchone()
+            if origin and origin[0]!=known[0]:db.execute("INSERT OR IGNORE INTO edges VALUES(?,?)",tuple(sorted((origin[0],known[0]))))
+    if known:return
     changed=db.execute("INSERT OR IGNORE INTO cog_candidates(fingerprint,kind,title,source,at,subject,confidence,priority) VALUES(?,?,?,?,?,?,?,?)",(fp,kind,title,source,now(),subject,confidence,priority)).rowcount
     if changed: emit(db,"proposal","Найден кандидат памяти: "+kind)
 def inspect_message(db,source,text):
@@ -118,11 +126,11 @@ def cycle(path,force=False):
                     if safe(row["title"]):
                         db.executemany("INSERT OR IGNORE INTO cog_terms VALUES(?,?)",((w,row["id"]) for w in sorted(terms(row["title"]))))
                 for row in to_index:
-                    if not safe(row["title"]): continue
+                    if not safe(row["title"]) or memory.trashed(db,row["id"]): continue
                     others=db.execute("SELECT n.id,n.title,n.category FROM nodes n JOIN cog_memory m ON m.node_id=n.id WHERE m.fingerprint=(SELECT fingerprint FROM cog_memory WHERE node_id=?) AND n.id<>? ORDER BY n.id LIMIT 100",(row["id"],row["id"])).fetchall()
                     others+=db.execute("SELECT n.id,n.title,n.category FROM cog_terms t JOIN cog_terms u ON u.term=t.term JOIN nodes n ON n.id=u.node_id WHERE t.node_id=? AND u.node_id<>? GROUP BY n.id ORDER BY COUNT(*) DESC,n.id LIMIT 100",(row["id"],row["id"])).fetchall()
                     for other in others:
-                        if not safe(other["title"]): continue
+                        if not safe(other["title"]) or memory.trashed(db,other["id"]): continue
                         sim=similarity(row["title"],other["title"])
                         exact=row["category"]==other["category"] and norm(row["title"])==norm(other["title"]) and row["category"]!="Документы"
                         if sim>=.6 or exact:
@@ -174,12 +182,17 @@ def review(path,data):
             if not c or c["state"]!="pending": raise ValueError("Candidate not pending")
             if action=="reject":
                 db.execute("UPDATE cog_candidates SET state='rejected' WHERE id=?",(ident,));emit(db,"review","Кандидат отклонён");return
+            if c["source"].startswith("document:") and memory.table(db,"document_sources") and not db.execute("SELECT 1 FROM document_sources s JOIN documents d ON d.id=s.document_id WHERE s.fingerprint=? AND d.deleted IS NULL AND d.extract_status=\x27indexed\x27",(c["fingerprint"],)).fetchone():raise ValueError("Нет активного индексированного источника")
             if memory.active_conflict(db,c["subject"],c["fingerprint"]):
                 if data.get("confirm_conflict") is not True: raise ValueError("Есть другое утверждение о том же предмете. Подтвердите сохранение обоих.")
             existing=memory.existing(db,c["title"],TYPES[c["kind"]])
             node=existing[0] if existing else db.execute("INSERT INTO nodes(title,category,folder,created_at) VALUES(?,?,?,?)",(c["title"],TYPES[c["kind"]],"Память",now())).lastrowid
             db.execute("INSERT INTO cog_memory(node_id,kind,subject,fingerprint,source,at,confidence,priority) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(node_id) DO UPDATE SET subject=excluded.subject,priority=MAX(cog_memory.priority,excluded.priority)",(node,c["kind"],c["subject"],c["fingerprint"],c["source"],c["at"],c["confidence"],c["priority"]))
             db.execute("UPDATE cog_candidates SET state='approved' WHERE id=?",(ident,))
+            if memory.table(db,"document_sources"):
+                db.execute("UPDATE document_sources SET node_id=? WHERE fingerprint=?",(node,c["fingerprint"]))
+                for origin in db.execute("SELECT d.node_id FROM document_sources s JOIN documents d ON d.id=s.document_id WHERE s.fingerprint=? AND d.deleted IS NULL",(c["fingerprint"],)):
+                    if origin[0]!=node:db.execute("INSERT OR IGNORE INTO edges VALUES(?,?)",tuple(sorted((origin[0],node))))
             if not existing: db.execute("INSERT INTO atlas_events(at,kind,detail) VALUES(?,?,?)",(now(),"node",c["title"]))
             emit(db,"memory","Кандидат принят пользователем",node)
             if memory.table(db,"evo_journal"): evolution.log(db,"memory","Подтверждена запись #%d"%node)
@@ -192,6 +205,7 @@ def relation(path,data):
         with db:
             if db.execute("SELECT COUNT(*) FROM nodes WHERE id IN (?,?)",(a,b)).fetchone()[0]!=2: raise ValueError("Unknown records")
             db.execute("BEGIN IMMEDIATE")
+            if action=="approve" and (memory.trashed(db,a) or memory.trashed(db,b)):raise ValueError("Документ в корзине")
             if kind=="cause" and action=="approve":
                 cycle=db.execute("WITH RECURSIVE reach(id) AS (SELECT ? UNION SELECT r.target FROM cog_relations r JOIN reach ON r.source=reach.id WHERE r.kind='cause' AND r.state='approved') SELECT 1 FROM reach WHERE id=?",(b,a)).fetchone()
                 if cycle: raise ValueError("Циклическая причинная связь запрещена")

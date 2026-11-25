@@ -5,6 +5,7 @@ import gateway
 import cognitive
 import evolution
 import documents
+import document_backup
 import document_workspace
 import memory_engine as memory
 import budget
@@ -64,6 +65,12 @@ def initialize():
                 temp=backup.with_suffix(".tmp")
                 with closing(sqlite3.connect(temp)) as dest:db.backup(dest)
                 temp.replace(backup)
+        if db.execute("PRAGMA user_version").fetchone()[0]<9 and memory.table(db,"nodes"):
+            backup=DB.with_name(DB.name+".before-v9.bak")
+            if not backup.exists():
+                temp=backup.with_suffix(".tmp")
+                with closing(sqlite3.connect(temp)) as dest:db.backup(dest)
+                temp.replace(backup)
         db.executescript("""
         CREATE TABLE IF NOT EXISTS nodes(id INTEGER PRIMARY KEY, title TEXT NOT NULL, category TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS edges(source INTEGER REFERENCES nodes(id), target INTEGER REFERENCES nodes(id), PRIMARY KEY(source,target), CHECK(source<target));
@@ -94,7 +101,7 @@ def initialize():
         memory.init_index(db)
         db.execute("CREATE TABLE IF NOT EXISTS atlas_revision(id INTEGER PRIMARY KEY CHECK(id=1),version INTEGER NOT NULL)")
         db.execute("INSERT OR IGNORE INTO atlas_revision VALUES(1,0)")
-        for table in ("nodes","edges","cog_relations","cog_aliases","evo_versions","evo_review","cog_memory","documents"):
+        for table in ("nodes","edges","cog_relations","cog_aliases","evo_versions","evo_review","cog_memory","documents","document_jobs","document_versions","document_sources","document_folders"):
             for operation in ("INSERT","UPDATE","DELETE"):
                 db.execute(f"CREATE TRIGGER IF NOT EXISTS rev_{table}_{operation.lower()} AFTER {operation} ON {table} BEGIN UPDATE atlas_revision SET version=version+1 WHERE id=1; END")
         if db.execute("PRAGMA user_version").fetchone()[0]<5:
@@ -104,7 +111,7 @@ def initialize():
             db.execute("PRAGMA user_version=5")
         if db.execute("PRAGMA user_version").fetchone()[0]<6:
             db.execute("PRAGMA user_version=6")
-        if db.execute("PRAGMA user_version").fetchone()[0]<8:db.execute("PRAGMA user_version=8")
+        if db.execute("PRAGMA user_version").fetchone()[0]<9:db.execute("PRAGMA user_version=9")
 
 def event(db, kind, detail):
     db.execute("INSERT INTO atlas_events(at,kind,detail) VALUES(?,?,?)",
@@ -501,6 +508,8 @@ def add_edge(source,target):
     if type(source) is not int or type(target) is not int or source<=0 or target<=0 or source==target:
         raise ValueError("Select two different records")
     with closing(connect()) as db, db:
+        db.execute("BEGIN IMMEDIATE")
+        if memory.trashed(db,source) or memory.trashed(db,target):raise ValueError("Документ в корзине")
         result = db.execute("INSERT OR IGNORE INTO edges VALUES(?,?)",tuple(sorted((source,target))))
         if result.rowcount:
             event(db,"edge",f"Связь {source} ↔ {target}")
@@ -575,13 +584,18 @@ class Handler(BaseHTTPRequestHandler):
             q=parse_qs(urlsplit(self.path).query)
             self.reply(200,documents.list_docs(DB,q.get("q",[""])[0],q.get("trash",["0"])[0]=="1",q.get("folder",[""])[0],int(q.get("after",["0"])[0])))
         elif path=="/api/workspace/graph":
-            self.reply(200,document_workspace.graph(DB,int(parse_qs(urlsplit(self.path).query).get("after",["0"])[0])))
+            q=parse_qs(urlsplit(self.path).query)
+            self.reply(200,document_workspace.graph(DB,int(q.get("after",["0"])[0]),q.get("q",[""])[0],q.get("folder",[""])[0],q.get("trash",["0"])[0]=="1"))
+        elif path=="/api/workspace/revision":
+            self.reply(200,document_workspace.revision(DB))
+        elif path=="/api/workspace/quality":
+            self.reply(200,document_workspace.quality(DB))
         elif path=="/api/workspace/analytics":
             self.reply(200,document_workspace.analytics(DB))
         elif path=="/api/workspace/detail":
             self.reply(200,document_workspace.details(DB,int(parse_qs(urlsplit(self.path).query).get("id",["0"])[0])))
         elif path=="/api/documents/health":
-            self.reply(200,documents.health(DB))
+            self.reply(200,documents.health(DB,parse_qs(urlsplit(self.path).query).get("deep",["0"])[0]=="1"))
         elif path=="/api/documents/by-node":
             self.reply(200,documents.by_node(DB,int(parse_qs(urlsplit(self.path).query).get("id",["0"])[0])))
         elif path=="/api/documents/preview":
@@ -675,6 +689,9 @@ class Handler(BaseHTTPRequestHandler):
             data=json.loads(self.rfile.read(n))
             if not isinstance(data,dict):
                 raise ValueError("Expected object")
+            if self.path=="/api/workspace/backup":
+                if data!={"confirm":True}:raise ValueError("Подтвердите локальное резервирование")
+                self.reply(200,document_backup.backup(DB));return
             if self.path=="/api/workspace/action":
                 self.reply(200,document_workspace.mutate(DB,data));return
             if self.path=="/api/workspace/ask":
