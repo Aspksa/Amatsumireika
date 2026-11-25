@@ -1,5 +1,6 @@
 """Local, bounded cognitive rules. No network, model calls or self-modifying code."""
 import hashlib
+import memory_engine as memory
 import json
 import logging
 import re
@@ -12,18 +13,16 @@ from threading import Event, Lock, Thread
 LOCK=Lock()
 BATCH=20
 PERSONA={"name":"Amatsumireika","identity":"Вымышленный образ небесной императрицы кицунэ","character":"Сдержанная, внимательная, решительная","values":["Точность","Уважение","Безопасность","Согласие пользователя"],"limitations":"Программная модель личности; не сознание, не реальные эмоции","version":1}
-TYPES={"fact":"Знания","episode":"Воспоминания","procedure":"Навыки","preference":"Личность","habit":"Опыт","cause":"Логика","goal":"Цели"}
+TYPES={"fact":"Знания","episode":"Воспоминания","procedure":"Навыки","preference":"Личность","habit":"Опыт","cause":"Логика","goal":"Цели","document":"Документы","emotion":"Эмоции"}
 LABELS={"факт":"fact","событие":"episode","навык":"procedure","привычка":"habit","предпочтение":"preference","причина":"cause","цель":"goal","запомни":"fact"}
 SECRET=re.compile(r"(?i)(api[_ -]?key|password|парол|секретн.{0,8}ключ|bearer\s|sk-[\w-]+|токен\s*[:=]|-----BEGIN|[\w.+-]+@[\w.-]+\.\w+|\d{12,})")
 STOP=set("это как что где когда или для мне меня мой моя твой тебе нужно будет надо хочу сделать про из на по в и а но не the and for you".split())
 def now(): return datetime.now(timezone.utc).isoformat()
-def norm(s): return " ".join(s.casefold().split())
+norm=memory.norm
 def digest(s): return hashlib.sha256(norm(s).encode()).hexdigest()
-def terms(s): return {x for x in re.findall(r"\w{3,}",norm(s)) if x not in STOP}
+terms=memory.terms
 def safe(s): return isinstance(s,str) and 3<=len(s)<=160 and not SECRET.search(s) and not any(ord(c)<32 for c in s)
-def similarity(a,b): 
-    x,y=terms(a),terms(b)
-    return len(x&y)/max(1,len(x|y))
+similarity=memory.similarity
 def intent(text):
     t=norm(text)
     for kind,pattern in (("memory",r"^(запомни|вспомни|найди в памяти|факт:)"),("plan",r"^(план|составь план|как сделать|как реализовать)"),("repair",r"(ошибк|баг|не работает|исправ)"),("learn",r"(объясни|научи|изучи|как устроен)"),("search",r"(найди|поищи|где)"),("calculate",r"(рассчитай|посчитай|сколько)")):
@@ -34,6 +33,7 @@ def plan(text):
     steps={"repair":["Воспроизвести проблему","Проверить журнал и условия","Проверить исправление"],"search":["Уточнить запрос","Найти локальные совпадения","Проверить источники"],"learn":["Определить тему","Разобрать примеры","Проверить понимание"],"calculate":["Уточнить единицы и входные данные","Рассчитать","Проверить результат"]}.get(kind,["Определить цель","Разделить задачу на проверяемые шаги","Проверить результат"])
     return {"intent":kind,"steps":steps,"executed":False}
 def init(db):
+    if memory.table(db,"cog_aliases") and memory.table(db,"cog_indexed"): return
     db.executescript("""
     CREATE TABLE IF NOT EXISTS cog_state(id INTEGER PRIMARY KEY CHECK(id=1), enabled INTEGER NOT NULL DEFAULT 1, last_cycle TEXT, cycles INTEGER NOT NULL DEFAULT 0, last_intent TEXT NOT NULL DEFAULT '', last_error TEXT NOT NULL DEFAULT '', style TEXT NOT NULL DEFAULT 'Сдержанный');
     INSERT OR IGNORE INTO cog_state(id) VALUES(1);
@@ -47,11 +47,17 @@ def init(db):
     CREATE TABLE IF NOT EXISTS cog_skills(name TEXT PRIMARY KEY, attempts INTEGER NOT NULL DEFAULT 0, successes INTEGER NOT NULL DEFAULT 0, failures INTEGER NOT NULL DEFAULT 0);
     CREATE TABLE IF NOT EXISTS cog_feedback(id INTEGER PRIMARY KEY, at TEXT NOT NULL, job TEXT NOT NULL UNIQUE, helpful INTEGER NOT NULL, note TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS cog_goals(id INTEGER PRIMARY KEY, code TEXT UNIQUE, title TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'suggested');
+    CREATE TABLE IF NOT EXISTS cog_aliases(alias_id INTEGER PRIMARY KEY REFERENCES nodes(id), canonical_id INTEGER NOT NULL REFERENCES nodes(id), CHECK(alias_id<>canonical_id));
+    CREATE INDEX IF NOT EXISTS cog_relations_kind ON cog_relations(kind,state,source,target);
+    CREATE TABLE IF NOT EXISTS cog_indexed(node_id INTEGER PRIMARY KEY REFERENCES nodes(id));
+    CREATE TABLE IF NOT EXISTS cog_terms(term TEXT NOT NULL,node_id INTEGER NOT NULL REFERENCES nodes(id),PRIMARY KEY(term,node_id));
+    CREATE INDEX IF NOT EXISTS cog_terms_node ON cog_terms(node_id);
     """)
 def connect(path):
     db=sqlite3.connect(path,timeout=5)
     db.row_factory=sqlite3.Row
     db.execute("PRAGMA foreign_keys=ON")
+    memory.register(db)
     return db
 def emit(db,kind,detail,node=None):
     db.execute("INSERT INTO cog_events(at,kind,detail,node_id) VALUES(?,?,?,?)",(now(),kind,detail,node))
@@ -59,7 +65,7 @@ def proposal(db,kind,title,source,subject="",confidence=.7,priority=1):
     title=title.strip()
     if kind not in TYPES or not safe(title): return
     fp=digest(kind+"\0"+title)
-    if db.execute("SELECT 1 FROM cog_memory WHERE fingerprint=?",(fp,)).fetchone(): return
+    if db.execute("SELECT 1 FROM cog_memory WHERE fingerprint=?",(fp,)).fetchone() or memory.existing(db,title,TYPES[kind]): return
     changed=db.execute("INSERT OR IGNORE INTO cog_candidates(fingerprint,kind,title,source,at,subject,confidence,priority) VALUES(?,?,?,?,?,?,?,?)",(fp,kind,title,source,now(),subject,confidence,priority)).rowcount
     if changed: emit(db,"proposal","Найден кандидат памяти: "+kind)
 def inspect_message(db,source,text):
@@ -71,10 +77,14 @@ def inspect_message(db,source,text):
     m=re.fullmatch(r"\s*(факт|событие|навык|привычка|предпочтение|причина|цель|запомни)\s*[:：]\s*(.+)",text,re.I)
     if m:
         k=LABELS[m[1].casefold()];title=m[2].strip()
-        subject=norm(title.split("=",1)[0]) if "=" in title and k=="fact" else ""
+        subject=subject_of(title,k)
         proposal(db,k,title,source,subject,.85,2)
     elif re.fullmatch(r"(?i)я предпочитаю [^?!\n]{3,120}[.]?",text):
         proposal(db,"preference",text.strip(),source,confidence=.55)
+def subject_of(title,kind):
+    if kind!="fact": return ""
+    m=re.fullmatch(r"([^=:]{1,80})\s*[=:]\s*(\S.+)",title)
+    return norm(m[1]) if m else ""
 def skill(db,name,success):
     db.execute("INSERT INTO cog_skills VALUES(?,1,?,?) ON CONFLICT(name) DO UPDATE SET attempts=attempts+1,successes=successes+excluded.successes,failures=failures+excluded.failures",(name,int(success),int(not success)))
 def cycle(path,force=False):
@@ -100,23 +110,32 @@ def cycle(path,force=False):
                 records=db.execute("SELECT id,title,category,created_at FROM nodes n WHERE NOT EXISTS(SELECT 1 FROM cog_memory m WHERE m.node_id=n.id) ORDER BY id LIMIT ?",(BATCH,)).fetchall()
                 for row in records:
                     k=next((k for k,v in TYPES.items() if v==row["category"]),"fact")
-                    db.execute("INSERT OR IGNORE INTO cog_memory(node_id,kind,fingerprint,source,at,confidence,priority) VALUES(?,?,?,?,?,?,?)",(row["id"],k,digest(k+"\0"+row["title"]),"manual",row["created_at"] or now(),1,2))
+                    db.execute("INSERT OR IGNORE INTO cog_memory(node_id,kind,subject,fingerprint,source,at,confidence,priority) VALUES(?,?,?,?,?,?,?,?)",(row["id"],k,subject_of(row["title"],k),digest(k+"\0"+row["title"]),"manual",row["created_at"] or now(),.7,2))
                 processed+=len(records)
-                # Suggestions, not destructive consolidation. Limit comparisons to recent approved records.
-                for row in records:
-                    others=db.execute("SELECT id,title FROM nodes WHERE id<>? ORDER BY id DESC LIMIT 100",(row["id"],)).fetchall()
+                # Indexed candidates across all previously processed nodes; bounded by overlap.
+                to_index=db.execute("SELECT id,title,category FROM nodes n WHERE EXISTS(SELECT 1 FROM cog_memory m WHERE m.node_id=n.id) AND NOT EXISTS(SELECT 1 FROM cog_indexed i WHERE i.node_id=n.id) ORDER BY id LIMIT ?",(BATCH,)).fetchall()
+                for row in to_index:
+                    db.execute("INSERT OR IGNORE INTO cog_indexed VALUES(?)",(row["id"],))
+                    if safe(row["title"]):
+                        db.executemany("INSERT OR IGNORE INTO cog_terms VALUES(?,?)",((w,row["id"]) for w in sorted(terms(row["title"]))))
+                for row in to_index:
+                    if not safe(row["title"]): continue
+                    others=db.execute("SELECT n.id,n.title,n.category FROM nodes n JOIN cog_memory m ON m.node_id=n.id WHERE m.fingerprint=(SELECT fingerprint FROM cog_memory WHERE node_id=?) AND n.id<>? ORDER BY n.id LIMIT 100",(row["id"],row["id"])).fetchall()
+                    others+=db.execute("SELECT n.id,n.title,n.category FROM cog_terms t JOIN cog_terms u ON u.term=t.term JOIN nodes n ON n.id=u.node_id WHERE t.node_id=? AND u.node_id<>? GROUP BY n.id ORDER BY COUNT(*) DESC,n.id LIMIT 100",(row["id"],row["id"])).fetchall()
                     for other in others:
-                        if not safe(row["title"]) or not safe(other["title"]): continue
+                        if not safe(other["title"]): continue
                         sim=similarity(row["title"],other["title"])
-                        if sim>=.6:
+                        exact=row["category"]==other["category"] and norm(row["title"])==norm(other["title"])
+                        if sim>=.6 or exact:
                             a,b=sorted((row["id"],other["id"]))
-                            kind="duplicate" if norm(row["title"])==norm(other["title"]) else "association"
+                            kind="duplicate" if exact else "association"
                             if db.execute("INSERT OR IGNORE INTO cog_relations(source,target,kind,evidence) VALUES(?,?,?,?)",(a,b,kind,"Совпадение слов: %.2f"%sim)).rowcount: emit(db,"relation","Предложена "+kind,a)
                 pending=db.execute("SELECT COUNT(*) FROM cog_candidates WHERE state='pending'").fetchone()[0]
-                if pending: db.execute("INSERT OR IGNORE INTO cog_goals(code,title) VALUES('review','Проверить кандидатов памяти')")
+                if pending: db.execute("INSERT INTO cog_goals(code,title) VALUES('review','Проверить кандидатов памяти') ON CONFLICT(code) DO UPDATE SET state='suggested'")
+                else: db.execute("UPDATE cog_goals SET state='done' WHERE code='review'")
                 if db.execute("SELECT 1 FROM cog_skills WHERE failures>0").fetchone(): db.execute("INSERT OR IGNORE INTO cog_goals(code,title) VALUES('errors','Разобрать неудачные операции и журнал')")
                 db.execute("UPDATE cog_state SET last_cycle=?,cycles=cycles+1,last_error='' WHERE id=1",(now(),))
-                emit(db,"cycle","Локальный цикл: %d объектов, %d мс"%(processed,round((time.monotonic()-started)*1000)))
+                if processed or to_index: emit(db,"cycle","Локальный цикл: %d объектов, %d мс"%(processed,round((time.monotonic()-started)*1000)))
                 # Bound activity log only; never delete knowledge, feedback or source records.
                 db.execute("DELETE FROM cog_events WHERE id < (SELECT COALESCE(MAX(id),0)-500 FROM cog_events)")
                 return {"processed":processed}
@@ -142,20 +161,23 @@ def worker(path):
     finally: stop.set();thread.join(timeout=6)
 def review(path,data):
     ident,action=data.get("id"),data.get("action")
-    if type(ident) is not int or action not in ("approve","reject"): raise ValueError("Invalid review")
+    if type(ident) is not int or action not in ("approve","reject","reopen"): raise ValueError("Invalid review")
     with closing(connect(path)) as db:
         init(db)
         with db:
             db.execute("BEGIN IMMEDIATE")
             c=db.execute("SELECT * FROM cog_candidates WHERE id=?",(ident,)).fetchone()
+            if action=="reopen":
+                if not c or c["state"]!="rejected": raise ValueError("Candidate not rejected")
+                db.execute("UPDATE cog_candidates SET state='pending' WHERE id=?",(ident,));emit(db,"review","Кандидат возвращён на проверку");return
             if not c or c["state"]!="pending": raise ValueError("Candidate not pending")
             if action=="reject":
                 db.execute("UPDATE cog_candidates SET state='rejected' WHERE id=?",(ident,));emit(db,"review","Кандидат отклонён");return
             if c["subject"] and db.execute("SELECT 1 FROM cog_memory WHERE subject=? AND fingerprint<>?",(c["subject"],c["fingerprint"])).fetchone():
                 if data.get("confirm_conflict") is not True: raise ValueError("Есть другое утверждение о том же предмете. Подтвердите сохранение обоих.")
-            existing=db.execute("SELECT id FROM nodes WHERE title=? AND category=? ORDER BY id LIMIT 1",(c["title"],TYPES[c["kind"]])).fetchone()
+            existing=memory.existing(db,c["title"],TYPES[c["kind"]])
             node=existing[0] if existing else db.execute("INSERT INTO nodes(title,category,folder,created_at) VALUES(?,?,?,?)",(c["title"],TYPES[c["kind"]],"Память",now())).lastrowid
-            db.execute("INSERT OR REPLACE INTO cog_memory(node_id,kind,subject,fingerprint,source,at,confidence,priority) VALUES(?,?,?,?,?,?,?,?)",(node,c["kind"],c["subject"],c["fingerprint"],c["source"],c["at"],c["confidence"],c["priority"]))
+            db.execute("INSERT INTO cog_memory(node_id,kind,subject,fingerprint,source,at,confidence,priority) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(node_id) DO UPDATE SET subject=excluded.subject,priority=MAX(cog_memory.priority,excluded.priority)",(node,c["kind"],c["subject"],c["fingerprint"],c["source"],c["at"],c["confidence"],c["priority"]))
             db.execute("UPDATE cog_candidates SET state='approved' WHERE id=?",(ident,))
             if not existing: db.execute("INSERT INTO atlas_events(at,kind,detail) VALUES(?,?,?)",(now(),"node",c["title"]))
             emit(db,"memory","Кандидат принят пользователем",node)
@@ -167,13 +189,25 @@ def relation(path,data):
         init(db)
         with db:
             if db.execute("SELECT COUNT(*) FROM nodes WHERE id IN (?,?)",(a,b)).fetchone()[0]!=2: raise ValueError("Unknown records")
+            db.execute("BEGIN IMMEDIATE")
             if kind=="cause" and action=="approve":
+                cycle=db.execute("WITH RECURSIVE reach(id) AS (SELECT ? UNION SELECT r.target FROM cog_relations r JOIN reach ON r.source=reach.id WHERE r.kind='cause' AND r.state='approved') SELECT 1 FROM reach WHERE id=?",(b,a)).fetchone()
+                if cycle: raise ValueError("Циклическая причинная связь запрещена")
                 db.execute("INSERT OR IGNORE INTO cog_relations(source,target,kind,evidence) VALUES(?,?,?,?)",(a,b,kind,"Причина указана пользователем"))
             if not db.execute("UPDATE cog_relations SET state=? WHERE source=? AND target=? AND kind=?",("approved" if action=="approve" else "rejected",a,b,kind)).rowcount: raise ValueError("Unknown relation")
             if action=="approve" and kind!="duplicate":
-                db.execute("INSERT OR IGNORE INTO edges VALUES(?,?)",tuple(sorted((a,b))))
+                changed=db.execute("INSERT OR IGNORE INTO edges VALUES(?,?)",tuple(sorted((a,b)))).rowcount
+                if changed: db.execute("INSERT INTO atlas_events(at,kind,detail) VALUES(?,?,?)",(now(),"edge",f"Связь {a} → {b}"))
                 emit(db,"relation","Подтверждена связь: "+kind,a)
-            elif kind=="duplicate": emit(db,"review","Дубликат отмечен; исходные записи сохранены",a)
+            elif kind=="duplicate" and action=="approve":
+                rows=db.execute("SELECT id,title,category FROM nodes WHERE id IN (?,?) ORDER BY id",(a,b)).fetchall()
+                if norm(rows[0]["title"])!=norm(rows[1]["title"]) or rows[0]["category"]!=rows[1]["category"]: raise ValueError("Only exact normalized duplicates can be grouped")
+                canonical=db.execute("SELECT canonical_id FROM cog_aliases WHERE alias_id=?",(a,)).fetchone()
+                canonical=canonical[0] if canonical else a
+                db.execute("UPDATE cog_aliases SET canonical_id=? WHERE canonical_id=?",(canonical,b))
+                db.execute("INSERT INTO cog_aliases VALUES(?,?) ON CONFLICT(alias_id) DO UPDATE SET canonical_id=excluded.canonical_id",(b,canonical))
+                emit(db,"review","Дубликат объединён в поиске; исходные записи и связи сохранены",canonical)
+            elif kind=="duplicate" and action=="reject": db.execute("DELETE FROM cog_aliases WHERE alias_id=?",(b,))
 def configure(path,data):
     if set(data)-{"enabled","style"}: raise ValueError("Unknown option")
     with closing(connect(path)) as db:
@@ -198,25 +232,37 @@ def lookup(path,q,record=False):
     if not isinstance(q,str) or not q.strip() or len(q)>300: raise ValueError("Invalid query")
     with closing(connect(path)) as db:
         init(db)
-        rows=db.execute("SELECT n.id,n.title,n.category,m.kind,m.confidence,m.priority,m.recall_count FROM nodes n LEFT JOIN cog_memory m ON m.node_id=n.id ORDER BY n.id DESC LIMIT 20000").fetchall()
-        matches=[(similarity(q,r["title"]+" "+r["category"]),dict(r)) for r in rows]
-        matches=sorted((x for x in matches if x[0]>0),key=lambda x:(-x[0],-(x[1]["priority"] or 0)))[:8]
-        results=[{**r,"score":round(score,3)} for score,r in matches]
+        results=memory.search(db,q,"Qwen/Qwen3-Embedding-0.6B")
         if record:
             with db:
                 for r in results: db.execute("UPDATE cog_memory SET recall_count=recall_count+1 WHERE node_id=?",(r["id"],));emit(db,"recall","Извлечена локальная запись",r["id"])
-        return {"results":results,"coverage":"Последние 20000 записей; поиск по словам","missing":not bool(results),"intent":intent(q)}
-def dashboard(path):
+        return {"results":results,"coverage":"Весь атлас; слова и доступные локальные векторы","missing":not bool(results),"intent":intent(q)}
+def dashboard(path,light=False):
     with closing(connect(path)) as db:
         init(db)
         st=dict(db.execute("SELECT * FROM cog_state WHERE id=1").fetchone())
+        revision=db.execute("SELECT version FROM atlas_revision WHERE id=1").fetchone()[0] if memory.table(db,"atlas_revision") else 0
+        if light:
+            return {"state":st,"revision":revision,"health":{"nodes":db.execute("SELECT COUNT(*) FROM nodes").fetchone()[0],"edges":db.execute("SELECT COUNT(*) FROM edges").fetchone()[0],"pending":db.execute("SELECT COUNT(*) FROM cog_candidates WHERE state='pending'").fetchone()[0]},"skills":[dict(r) for r in db.execute("SELECT * FROM cog_skills ORDER BY name")],"events":[dict(r) for r in db.execute("SELECT * FROM cog_events ORDER BY id DESC LIMIT 30")]}
         candidates=[dict(r) for r in db.execute("SELECT c.*,EXISTS(SELECT 1 FROM cog_memory m WHERE c.subject<>'' AND m.subject=c.subject AND m.fingerprint<>c.fingerprint) conflict FROM cog_candidates c WHERE state='pending' ORDER BY id DESC LIMIT 50")]
+        rejected=[dict(r) for r in db.execute("SELECT id,title FROM cog_candidates WHERE state='rejected' ORDER BY id DESC LIMIT 20")]
         relations=[dict(r) for r in db.execute("SELECT r.*,a.title source_title,b.title target_title FROM cog_relations r JOIN nodes a ON a.id=r.source JOIN nodes b ON b.id=r.target WHERE r.state='suggested' ORDER BY r.source DESC LIMIT 30")]
         counts={r[0]:r[1] for r in db.execute("SELECT kind,COUNT(*) FROM cog_memory GROUP BY kind")}
-        health={"foreign_key_issues":len(db.execute("PRAGMA foreign_key_check").fetchmany(10)),"pending":db.execute("SELECT COUNT(*) FROM cog_candidates WHERE state='pending'").fetchone()[0],"nodes":db.execute("SELECT COUNT(*) FROM nodes").fetchone()[0],"edges":db.execute("SELECT COUNT(*) FROM edges").fetchone()[0]}
-        return {"state":st,"persona":PERSONA,"counts":counts,"health":health,"candidates":candidates,"relations":relations,"skills":[dict(r) for r in db.execute("SELECT * FROM cog_skills ORDER BY name")],"goals":[dict(r) for r in db.execute("SELECT * FROM cog_goals ORDER BY id LIMIT 20")],"events":[dict(r) for r in db.execute("SELECT * FROM cog_events ORDER BY id DESC LIMIT 30")]}
+        health={"foreign_key_issues":sum(1 for _ in db.execute("PRAGMA foreign_key_check")),"pending":db.execute("SELECT COUNT(*) FROM cog_candidates WHERE state='pending'").fetchone()[0],"nodes":db.execute("SELECT COUNT(*) FROM nodes").fetchone()[0],"edges":db.execute("SELECT COUNT(*) FROM edges").fetchone()[0]}
+        return {"state":st,"revision":revision,"persona":PERSONA,"counts":counts,"health":health,"candidates":candidates,"rejected":rejected,"relations":relations,"skills":[dict(r) for r in db.execute("SELECT * FROM cog_skills ORDER BY name")],"goals":[dict(r) for r in db.execute("SELECT * FROM cog_goals ORDER BY id LIMIT 20")],"events":[dict(r) for r in db.execute("SELECT * FROM cog_events ORDER BY id DESC LIMIT 30")]}
 def system_profile(path,prompt):
     # Only fixed persona and approved style, never local memories or user preferences.
     with closing(connect(path)) as db:
         init(db);style=db.execute("SELECT style FROM cog_state WHERE id=1").fetchone()[0]
     return " You portray Amatsumireika, a fictional celestial kitsune empress. Be accurate, respectful, and clear about limitations. Do not claim consciousness. Speech style: "+style+". User request category: "+intent(prompt)+"."
+
+def adaptive_plan(path,text,db=None):
+    result=plan(text)
+    def enrich(conn):
+        if memory.table(conn,"cog_skills"):
+            failures=conn.execute("SELECT COALESCE(SUM(failures),0) FROM cog_skills").fetchone()[0]
+            if failures and result["intent"] in ("repair","search"):
+                result["steps"].insert(0,"Проверить прошлые неудачные операции и не повторять их без проверки")
+        return result
+    if db is not None:return enrich(db)
+    with closing(connect(path)) as conn:return enrich(conn)

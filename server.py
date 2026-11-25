@@ -3,6 +3,7 @@ import argparse
 import cloud_api
 import gateway
 import cognitive
+import memory_engine as memory
 import budget
 import logging
 import secrets
@@ -31,10 +32,17 @@ def connect():
     DB.parent.mkdir(parents=True, exist_ok=True)
     db = sqlite3.connect(DB, timeout=5)
     db.execute("PRAGMA foreign_keys=ON")
+    memory.register(db)
     return db
 
 def initialize():
     with closing(connect()) as db, db:
+        if db.execute("PRAGMA user_version").fetchone()[0]<5 and memory.table(db,"nodes"):
+            backup=DB.with_name(DB.name+".before-v5.bak")
+            if not backup.exists():
+                temp=backup.with_suffix(".tmp")
+                with closing(sqlite3.connect(temp)) as dest: db.backup(dest)
+                temp.replace(backup)
         db.executescript("""
         CREATE TABLE IF NOT EXISTS nodes(id INTEGER PRIMARY KEY, title TEXT NOT NULL, category TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS edges(source INTEGER REFERENCES nodes(id), target INTEGER REFERENCES nodes(id), PRIMARY KEY(source,target), CHECK(source<target));
@@ -58,6 +66,16 @@ def initialize():
         db.execute("CREATE INDEX IF NOT EXISTS idx_nodes_folder ON nodes(folder)")
         db.execute("CREATE INDEX IF NOT EXISTS idx_nodes_created ON nodes(created_at)")
         cognitive.init(db)
+        db.execute("CREATE TABLE IF NOT EXISTS atlas_revision(id INTEGER PRIMARY KEY CHECK(id=1),version INTEGER NOT NULL)")
+        db.execute("INSERT OR IGNORE INTO atlas_revision VALUES(1,0)")
+        for table in ("nodes","edges","cog_relations","cog_aliases"):
+            for operation in ("INSERT","UPDATE","DELETE"):
+                db.execute(f"CREATE TRIGGER IF NOT EXISTS rev_{table}_{operation.lower()} AFTER {operation} ON {table} BEGIN UPDATE atlas_revision SET version=version+1 WHERE id=1; END")
+        if db.execute("PRAGMA user_version").fetchone()[0]<5:
+            for ident,title,category in db.execute("SELECT id,title,category FROM nodes"):
+                kind=next((k for k,v in cognitive.TYPES.items() if v==category),"fact")
+                db.execute("UPDATE cog_memory SET kind=?,subject=?,fingerprint=? WHERE node_id=? AND source='manual'",(kind,cognitive.subject_of(title,kind),cognitive.digest(kind+"\0"+title),ident))
+            db.execute("PRAGMA user_version=5")
 
 def event(db, kind, detail):
     db.execute("INSERT INTO atlas_events(at,kind,detail) VALUES(?,?,?)",
@@ -368,7 +386,12 @@ def chat_history(db):
                     body+=(("\n" if body else "")+"[Cloud.ru: "+job_status+"; проверьте историю запросов]")
                 messages.append(dict(id=ident+"-assistant",role="assistant",content=body,created_at=finished or created))
     messages.sort(key=lambda row: row["created_at"])
-    return {"messages":messages[-200:],"model_connected":False}
+    configured=False
+    if memory.table(db,"cloud_config"):
+        model=db.execute("SELECT model FROM cloud_config WHERE id=1").fetchone()
+        key,_=cloud_api.read_key(db,DB)
+        configured=bool(model and model[0] and key)
+    return {"messages":messages[-200:],"model_connected":configured}
 
 def get_chat():
     with closing(connect()) as db:
@@ -387,23 +410,23 @@ def send_chat(content):
         if command=="/помощь":
             append("system","Локальные команды: /статус, /найти текст, /план задача. Облачный ответ требует отдельного согласия.")
         elif command.startswith("/план "):
-            result=cognitive.plan(content[6:]);append("system","Локальный план: "+"; ".join(result["steps"]))
+            result=cognitive.adaptive_plan(DB,content[6:],db);append("system","Локальный план: "+"; ".join(result["steps"]))
         elif command.startswith("/найти "):
             # Reuse current connection to avoid a second writer while chat transaction is open.
-            q=cognitive.terms(content[7:]);matches=[r[0] for r in db.execute("SELECT title FROM nodes ORDER BY id DESC LIMIT 20000") if q & cognitive.terms(r[0])][:8]
+            matches=[r["title"] for r in memory.search(db,content[7:],gateway.EMBED_MODEL)]
             append("system","Локальная память: "+("; ".join(matches) if matches else "Совпадений нет"))
         elif command=="/статус":
             count=db.execute("SELECT COUNT(*) FROM nodes").fetchone()[0]
             links=db.execute("SELECT COUNT(*) FROM edges").fetchone()[0]
-            append("system",f"SQLite работает. Записей: {count}; связей: {links}. Языковая модель не подключена.")
+            append("system",f"SQLite работает. Записей: {count}; связей: {links}. Облачный ответ требует отдельного согласия.")
         else:
-            append("system","Сообщение сохранено. Для ответа ИИ необходимо подключить языковую модель.")
+            append("system","Сообщение сохранено локально. Для ответа ИИ необходимо подключить модель или разрешить облачный запрос.")
         return chat_history(db)
 
 def snapshot():
     with closing(connect()) as db:
         db.execute("BEGIN")
-        return {"nodes":[dict(id=i,title=t,category=c,folder=f,created_at=at) for i,t,c,f,at in db.execute("SELECT id,title,category,folder,created_at FROM nodes ORDER BY id")],
+        return {"revision":db.execute("SELECT version FROM atlas_revision WHERE id=1").fetchone()[0],"causes":[dict(source=a,target=b) for a,b in db.execute("SELECT source,target FROM cog_relations WHERE kind='cause' AND state='approved'")],"nodes":[dict(id=i,title=t,category=c,folder=f,created_at=at) for i,t,c,f,at in db.execute("SELECT id,title,category,folder,created_at FROM nodes ORDER BY id")],
                 "edges":[dict(source=s,target=t) for s,t in db.execute("SELECT source,target FROM edges ORDER BY source,target")],
                 "categories":CATEGORIES}
 
@@ -416,6 +439,9 @@ def add_node(title, category, folder=""):
     if any(p in (".","..") for p in folder.split("/")):
         raise ValueError("Invalid folder path")
     with closing(connect()) as db, db:
+        db.execute("BEGIN IMMEDIATE")
+        existing=memory.existing(db,title.strip(),category,folder)
+        if existing: return existing[0]
         node_id = db.execute("INSERT INTO nodes(title,category,folder,created_at) VALUES(?,?,?,?)",(title.strip(),category,folder,datetime.now(timezone.utc).isoformat())).lastrowid
         event(db,"node",title.strip())
         return node_id
@@ -495,7 +521,7 @@ class Handler(BaseHTTPRequestHandler):
         if path=="/api/health":
             self.reply(200,{"app":"Amatsumireika","instance":self.server.instance,"ready":True})
         elif path=="/api/cognitive":
-            self.reply(200,cognitive.dashboard(DB))
+            self.reply(200,cognitive.dashboard(DB,parse_qs(urlsplit(self.path).query).get("light",["0"])[0]=="1"))
         elif path=="/api/cloud/settings":
             self.reply(200,cloud_api.state(DB))
         elif path=="/api/cloud/budget":
@@ -561,12 +587,15 @@ class Handler(BaseHTTPRequestHandler):
                 elif action=="relation": cognitive.relation(DB,data)
                 elif action=="settings": cognitive.configure(DB,data)
                 elif action=="feedback": cognitive.feedback(DB,data)
+                elif action=="preview":
+                    result=cognitive.lookup(DB,data.get("query"),False)
+                    self.reply(200,{"memory":[{"id":r["id"],"title":r["title"],"category":r["category"]} for r in result["results"] if cognitive.safe(r["title"])][:5]});return
                 elif action=="lookup":
                     self.reply(200,cognitive.lookup(DB,data.get("query"),True));return
                 elif action=="plan":
                     query=data.get("query")
                     if not isinstance(query,str) or not 1<=len(query)<=3000: raise ValueError("Invalid query")
-                    self.reply(200,cognitive.plan(query));return
+                    self.reply(200,cognitive.adaptive_plan(DB,query));return
                 else: self.reply(404,{"error":"Not found"});return
                 self.reply(200,cognitive.dashboard(DB));return
             if self.path=="/api/cloud/embed-search":
@@ -579,12 +608,18 @@ class Handler(BaseHTTPRequestHandler):
                 self.reply(202,gateway.submit(DB,data))
                 return
             if self.path=="/api/cloud/settings":
-                self.reply(200,cloud_api.save(DB,data))
+                if not gateway.ACTIVE.acquire(False): raise ValueError("Облачный запрос выполняется; настройки временно заблокированы")
+                try: result=cloud_api.save(DB,data)
+                finally: gateway.ACTIVE.release()
+                self.reply(200,result)
                 return
             if self.path=="/api/cloud/models":
                 if data != {"confirm": True}:
                     raise ValueError("Explicit catalog request required")
-                self.reply(200,cloud_api.refresh(DB))
+                if not gateway.ACTIVE.acquire(False): raise ValueError("Облачный запрос выполняется")
+                try: result=cloud_api.refresh(DB)
+                finally: gateway.ACTIVE.release()
+                self.reply(200,result)
                 return
             if self.path=="/api/calendar/refresh":
                 self.reply(200,refresh_calendars())
@@ -628,24 +663,31 @@ def main():
     parser.add_argument("--open",action="store_true")
     parser.add_argument("--port",type=int,default=0)
     args=parser.parse_args()
-    initialize()
-    gateway.recover(DB)
-    load_bundled_calendars()
-    logging.basicConfig(level=logging.INFO,format="%(levelname)s %(message)s")
-    with LocalServer(("127.0.0.1",args.port),Handler) as server:
-        url=f"http://127.0.0.1:{server.server_port}"
-        print(url,flush=True)
-        if args.open:
+    from launcher import InstanceLock
+    DB.parent.mkdir(parents=True,exist_ok=True)
+    lock=InstanceLock(DB.parent/"instance.lock")
+    if not lock.acquire(): raise SystemExit("Another server instance is running")
+    try:
+        initialize()
+        gateway.recover(DB)
+        load_bundled_calendars()
+        logging.basicConfig(level=logging.INFO,format="%(levelname)s %(message)s")
+        with LocalServer(("127.0.0.1",args.port),Handler) as server:
+            url=f"http://127.0.0.1:{server.server_port}"
+            print(url,flush=True)
+            if args.open:
+                try:
+                    if not webbrowser.open(url):
+                        print("Open the URL manually.",flush=True)
+                except Exception:
+                    logging.exception("Browser launch failed; server remains available")
             try:
-                if not webbrowser.open(url):
-                    print("Open the URL manually.",flush=True)
-            except Exception:
-                logging.exception("Browser launch failed; server remains available")
-        try:
-            with cognitive.worker(DB):
-                server.serve_forever()
-        except KeyboardInterrupt:
-            pass
+                with cognitive.worker(DB):
+                    server.serve_forever()
+            except KeyboardInterrupt:
+                pass
+    finally:
+        lock.close()
 
 if __name__=="__main__":
     main()
