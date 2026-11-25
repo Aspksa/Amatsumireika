@@ -157,3 +157,32 @@ button.primary,.modes button.active,#chat-form button:not(:disabled){background:
 :where(button,input,select,textarea,summary):focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 #core-open:focus-visible{outline:2px solid var(--accent)}
 @media(max-width:760px){#chat-panel,main:not(.expanded) #left{border:0}}
+
+/* Chronograph v0.8: one borderless radial calendar, with real production data. */
+main:not(.expanded) #left{padding:clamp(6px,1vw,16px);justify-content:center;gap:8px;container-type:inline-size}
+.chrono-years{display:flex;align-items:center;justify-content:center;gap:12px;flex:none}
+.chrono-years button{background:transparent;padding:4px 6px;color:var(--muted);font:11px var(--mono)}
+.chrono-years button.active{background:transparent;color:#eac275;font-weight:700}
+.chrono-wheel{position:relative;width:100%;aspect-ratio:1;flex:none;max-width:440px;align-self:center}
+#year-wheel{width:100%;height:100%;cursor:crosshair}
+.chrono-clock{position:absolute;left:50%;top:50%;width:42%;transform:translate(-50%,-50%);text-align:center;pointer-events:none}
+.chrono-clock #clock{color:#eac275;font:600 clamp(12px,8.4cqw,34px)/1.15 var(--mono);letter-spacing:-.07em;font-variant-numeric:tabular-nums;white-space:nowrap}
+#clock-date{font:10px/1.4 var(--sans);color:var(--ink);margin:4px 0;text-transform:none}
+#year-progress{font:9px var(--mono);color:var(--muted)}
+.chrono-legend{display:flex;justify-content:center;flex-wrap:wrap;gap:8px;font:9px var(--mono);color:var(--muted)}
+.chrono-legend span:before{content:"";display:inline-block;width:5px;height:5px;border-radius:50%;margin-right:4px;background:var(--day-color)}
+.chrono-legend .work{--day-color:#42c9af}.chrono-legend .weekend{--day-color:#7184a5}.chrono-legend .holiday{--day-color:#e9b65c}.chrono-legend .short{--day-color:#ed8f7b}
+.chrono-select{display:flex;align-items:center;justify-content:center;gap:6px}
+.chrono-select input,.chrono-select button{background:transparent;color:var(--ink);font:11px var(--mono);padding:5px 3px}
+.chrono-select button{font-size:19px;line-height:1;color:var(--accent)}
+#day-type{text-align:center;color:var(--accent);font:10px/1.5 var(--mono);min-height:15px}
+.chrono-stats{padding:10px 0 0;flex:none}
+.chrono-period{display:flex;justify-content:space-between;font:10px var(--mono);color:var(--muted);margin-bottom:12px}
+.chrono-numbers{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;text-align:center}
+.chrono-numbers strong{display:block;font:600 clamp(14px,8cqw,26px) var(--mono);color:var(--ink);letter-spacing:-.06em}
+.chrono-numbers small{font:9px var(--sans);color:var(--muted)}
+.chrono-month,.chrono-norms,#prod-warning{margin-top:12px;text-align:center;font:10px/1.5 var(--mono);color:var(--muted)}
+#prod-warning:empty{display:none}.chrono-events{margin-top:2px}.chrono-events summary{font-size:10px}
+:root.paper .chrono-clock #clock,:root.paper .chrono-years button.active{color:#987026}
+@media(max-width:760px){main:not(.expanded) #left{max-width:440px;width:100%;justify-self:center;padding:16px;justify-content:flex-start}.chrono-clock #clock{font-size:clamp(12px,8.4cqw,34px)}}
+@media(max-height:670px) and (min-width:761px){main:not(.expanded) #left{justify-content:flex-start}}

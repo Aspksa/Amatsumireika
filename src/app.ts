@@ -270,18 +270,90 @@ async function loadSettings(){try{const response=await fetch("/api/settings");if
 type AtlasEvent={at:string;kind:string;detail:string};
 let events:AtlasEvent[]=[],month=new Date(),daySelected=dayKey(new Date());
 function dayKey(d:Date){return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")}
-function renderCalendar(){const root=$("calendar");root.replaceChildren();const year=month.getFullYear(),m=month.getMonth();text($("month"),month.toLocaleDateString("ru-RU",{month:"long",year:"numeric"}));for(const w of ["Пн","Вт","Ср","Чт","Пт","Сб","Вс"]){const el=document.createElement("span");el.className="weekday";text(el,w);root.append(el)}const offset=(new Date(year,m,1).getDay()+6)%7;for(let i=0;i<offset;i++)root.append(document.createElement("span"));const counts=new Map<string,number>();for(const e of events){const k=dayKey(new Date(e.at));counts.set(k,(counts.get(k)??0)+1)}for(let d=1;d<=new Date(year,m+1,0).getDate();d++){const k=dayKey(new Date(year,m,d)),b=document.createElement("button");text(b,String(d));b.classList.toggle("day-with-events",counts.has(k));b.classList.toggle("day-today",k===dayKey(new Date()));b.classList.toggle("day-selected",k===daySelected);b.title=(counts.get(k)??0)+" событий";b.onclick=()=>{daySelected=k;renderCalendar()};root.append(b)}const selectedEvents=events.filter(e=>dayKey(new Date(e.at))===daySelected);renderEventRows($("day-events"),selectedEvents,"Нет зарегистрированных событий")}
+// Federal Russian production calendar, Monday–Friday; no regional holidays.
+// 2026: decree 1466, 24.09.2025; 2027: decree 1187, 17.09.2026.
+// Fixed holidays: article 112 of the Labour Code.
+type DayType="work"|"weekend"|"holiday"|"short"|"transfer";
+const productionRules:Record<number,{rest:string[];short:string[]}>={
+ 2026:{rest:["01-09","03-09","05-11","12-31"],short:["04-30","05-08","06-11","11-03"]},
+ 2027:{rest:["02-22","05-03","05-10","06-14","11-05","12-31"],short:["02-20","04-30","06-11","11-03"]}
+};
+const officialHolidays=new Set(["01-01","01-02","01-03","01-04","01-05","01-06","01-07","01-08","02-23","03-08","05-01","05-09","06-12","11-04"]);
+const dayColors:Record<DayType,string>={work:"#42c9af",weekend:"#7184a5",holiday:"#e9b65c",short:"#ed8f7b",transfer:"#7184a5"};
+const dayNames:Record<DayType,string>={work:"Рабочий день · 8 ч",weekend:"Выходной",holiday:"Праздник",short:"Сокращённый день · 7 ч",transfer:"Перенесённый выходной"};
+const monthNames=["Янв","Фев","Мар","Апр","Май","Июн","Июл","Авг","Сен","Окт","Ноя","Дек"];
+function productionDay(d:Date):DayType|null{
+ const rules=productionRules[d.getFullYear()];if(!rules)return null;
+ const key=dayKey(d).slice(5);
+ if(officialHolidays.has(key))return "holiday";
+ if(rules.short.includes(key))return "short";
+ if(rules.rest.includes(key))return "transfer";
+ return d.getDay()===0||d.getDay()===6?"weekend":"work";
+}
+function yearDates(y:number){const result:Date[]=[];for(let d=new Date(y,0,1,12);d.getFullYear()===y;d.setDate(d.getDate()+1))result.push(new Date(d));return result}
+function productionStats(dates:Date[]){
+ if(!dates.length||dates.some(d=>productionDay(d)===null))return null;
+ let work=0,short=0;for(const d of dates){const t=productionDay(d);if(t==="work"||t==="short")work++;if(t==="short")short++}
+ return {work,rest:dates.length-work,short,h40:work*8-short,h36:Math.round((work*7.2-short)*10)/10,h24:Math.round((work*4.8-short)*10)/10};
+}
+let autoYear=true,calendarYear=new Date().getFullYear();
+const wheel=$<HTMLCanvasElement>("year-wheel"),wheelCtx=wheel.getContext("2d")!;
+function displayedYear(now:Date){return autoYear?now.getFullYear():calendarYear}
+function elapsedDays(year:number,now:Date){const key=dayKey(now);return yearDates(year).filter(d=>dayKey(d)<=key).length}
+function drawYear(now=new Date()){
+ const y=displayedYear(now),days=yearDates(y),today=dayKey(now),selected=daySelected;
+ const box=wheel.getBoundingClientRect();const side=Math.max(1,Math.min(box.width,box.height));if(side<=1)return;
+ const size=Math.max(1,Math.round(side*Math.min(devicePixelRatio||1,2)));if(wheel.width!==size)wheel.width=size;if(wheel.height!==size)wheel.height=size;
+ const c=wheelCtx;c.setTransform(size/320,0,0,size/320,0,0);c.clearRect(0,0,320,320);
+ const center=160,inner=69,step=tau/days.length;
+ const dark=!paper(),base=dark?"#273a45":"#c9c7bf",ink=dark?"#9db1be":"#52646c",gold=dark?"#eac275":"#987026";
+ const point=(angle:number,r:number)=>({x:center+Math.cos(angle)*r,y:center+Math.sin(angle)*r});
+ function stroke(a:number,b:number,r:number,color:string,w:number){c.beginPath();c.arc(center,center,r,a,b);c.strokeStyle=color;c.lineWidth=w;c.stroke()}
+ stroke(0,tau,inner-4,base,.8);stroke(0,tau,inner-10,base,.5);stroke(0,tau,140,base,.5);
+ for(let i=0;i<60;i++){const angle=-Math.PI/2+i*tau/60,p=point(angle,inner-9),q=point(angle,inner-(i%5===0?15:12));c.beginPath();c.moveTo(p.x,p.y);c.lineTo(q.x,q.y);c.strokeStyle=i%5===0?gold:base;c.lineWidth=i%5===0?1:.6;c.stroke()}
+ for(let i=0;i<days.length;i++){
+  const d=days[i],key=dayKey(d),type=productionDay(d),angle=-Math.PI/2+(i+.5)*step,passed=key<=today;
+  // Ray height grows with the ordinal day; a new ray is filled at local midnight.
+  const length=12+57*(i+1)/days.length,tip=inner+length,p=point(angle,inner),q=point(angle,tip);
+  c.globalAlpha=passed?1:.19;c.strokeStyle=type?dayColors[type]:base;c.lineWidth=key===today?2:1.02;c.beginPath();c.moveTo(p.x,p.y);c.lineTo(q.x,q.y);c.stroke();c.globalAlpha=1;
+  if(key===today||key===selected){const k=point(angle,tip+3);c.beginPath();c.arc(k.x,k.y,key===today?2.5:1.6,0,tau);c.fillStyle=key===today?gold:ink;c.fill()}
+  if(d.getDate()===1){const p1=point(angle-step/2,inner-1),p2=point(angle-step/2,141);c.strokeStyle=base;c.lineWidth=.7;c.beginPath();c.moveTo(p1.x,p1.y);c.lineTo(p2.x,p2.y);c.stroke()}
+ }
+ for(let m=0;m<12;m++){const first=days.findIndex(d=>d.getMonth()===m),n=new Date(y,m+1,0).getDate(),angle=-Math.PI/2+(first+n/2)*step,p=point(angle,151);c.font="9px "+mono;c.textAlign="center";c.textBaseline="middle";c.fillStyle=now.getFullYear()===y&&now.getMonth()===m?gold:ink;c.fillText(monthNames[m],p.x,p.y)}
+ const progress=elapsedDays(y,now)/days.length;stroke(-Math.PI/2,-Math.PI/2+progress*tau,inner-3,gold,1.1);
+}
+function renderCalendar(now=new Date()){
+ const year=displayedYear(now),days=yearDates(year),stats=productionStats(days),current=daySelected.slice(0,4)===String(year)?new Date(daySelected+"T12:00:00"):new Date(year,0,1,12);
+ const selected=dayKey(current);daySelected=selected;month=current;
+ for(const [id,active] of [["year-2026",!autoYear&&year===2026],["year-auto",autoYear],["year-2027",!autoYear&&year===2027]] as [string,boolean][]){$(id).classList.toggle("active",active);$(id).setAttribute("aria-pressed",String(active))}
+ $<HTMLInputElement>("selected-date").value=selected;
+ text($("year-progress"),elapsedDays(year,now)+" / "+days.length);
+ text($("prod-period"),String(year));
+ text($("prod-work"),stats?String(stats.work):"—");text($("prod-rest"),stats?String(stats.rest):"—");text($("prod-hours"),stats?String(stats.h40):"—");
+ const ms=productionStats(days.filter(d=>d.getMonth()===current.getMonth())),num=(n:number)=>n.toLocaleString("ru-RU");
+ text($("prod-month"),ms?monthNames[current.getMonth()]+" · "+ms.work+" раб. / "+ms.rest+" вых. · "+ms.h40+" ч":"");
+ text($("prod-norms"),stats?"36 ч — "+num(stats.h36)+" · 24 ч — "+num(stats.h24):"");
+ text($("prod-warning"),stats?"":"Нет утверждённых данных на этот год");
+ const kind=productionDay(current);text($("day-type"),kind?dayNames[kind]:"Тип дня неизвестен");
+ renderEventRows($("day-events"),events.filter(e=>dayKey(new Date(e.at))===selected),"Нет зарегистрированных событий");
+ drawYear(now);
+}
+function chooseCalendarYear(year:number|null,now=new Date()){autoYear=year===null;calendarYear=year??now.getFullYear();daySelected=calendarYear===now.getFullYear()?dayKey(now):dayKey(new Date(calendarYear,0,1,12));renderCalendar(now)}
+$("year-2026").onclick=()=>chooseCalendarYear(2026);$("year-2027").onclick=()=>chooseCalendarYear(2027);$("year-auto").onclick=()=>chooseCalendarYear(null);$("today").onclick=()=>chooseCalendarYear(null);
+$<HTMLInputElement>("selected-date").onchange=e=>{const value=(e.target as HTMLInputElement).value;if(!/^202[67]-\d{2}-\d{2}$/.test(value))return;const d=new Date(value+"T12:00:00");if(dayKey(d)!==value)return;calendarYear=d.getFullYear();autoYear=calendarYear===new Date().getFullYear();daySelected=value;renderCalendar()};
+wheel.addEventListener("pointerup",e=>{const rect=wheel.getBoundingClientRect(),x=(e.clientX-rect.left)/rect.width*320-160,y=(e.clientY-rect.top)/rect.height*320-160,r=Math.hypot(x,y);if(r<66||r>158)return;const days=yearDates(displayedYear(new Date())),angle=(Math.atan2(y,x)+Math.PI/2+tau)%tau,d=days[Math.min(days.length-1,Math.floor(angle/tau*days.length))];daySelected=dayKey(d);renderCalendar()});
+new ResizeObserver(()=>drawYear()).observe(wheel);
 function renderEventRows(root:HTMLElement,list:AtlasEvent[],empty:string){root.replaceChildren();if(!list.length){text(root,empty);return}for(const e of list.slice(0,30)){const row=document.createElement("div");row.className="event-row";text(row,new Date(e.at).toLocaleString("ru-RU")+" · "+e.detail);root.append(row)}}
 async function loadEvents(){try{const r=await fetch("/api/events");if(!r.ok)throw Error("API "+r.status);events=await r.json();renderCalendar();renderMatrix();renderEventRows($("notices"),events.slice(0,8),"Нет новых событий");text($("system-event"),events[0]?new Date(events[0].at).toLocaleTimeString("ru-RU")+" · "+events[0].detail.slice(0,70):"LOCAL / SQLITE / CANVAS")}catch(err){text($("notices"),"Журнал недоступен: "+String(err))}}
-function renderMatrix(){const el=$("process-matrix");el.replaceChildren();const today=new Date();today.setHours(0,0,0,0);const dates=Array.from({length:7},(_,i)=>{const d=new Date(today);d.setDate(d.getDate()-6+i);return dayKey(d)});for(const kind of ["node","edge","settings"]){const label=document.createElement("div");label.className="matrix-label";text(label,kind==="node"?"Записи":kind==="edge"?"Связи":"Настройки");el.append(label);for(const date of dates){const count=events.filter(e=>e.kind===kind&&dayKey(new Date(e.at))===date).length;const b=document.createElement("button");b.className="matrix-cell"+(count?" active-cell":"");text(b,count?String(count):"·");b.title=date+" · "+kind+" · "+count;b.onclick=()=>{daySelected=date;month=new Date(date+"T12:00:00");renderCalendar()};el.append(b)}}text($("skill-count"),String(state.nodes.filter(n=>n.category==="Навыки").length));text($("routine-count"),"Модуль рутин не подключён")}
-$("prev-month").onclick=()=>{month=new Date(month.getFullYear(),month.getMonth()-1,1);renderCalendar()};$("next-month").onclick=()=>{month=new Date(month.getFullYear(),month.getMonth()+1,1);renderCalendar()};renderCalendar();
+function renderMatrix(){const el=$("process-matrix");el.replaceChildren();const today=new Date();today.setHours(0,0,0,0);const dates=Array.from({length:7},(_,i)=>{const d=new Date(today);d.setDate(d.getDate()-6+i);return dayKey(d)});for(const kind of ["node","edge","settings"]){const label=document.createElement("div");label.className="matrix-label";text(label,kind==="node"?"Записи":kind==="edge"?"Связи":"Настройки");el.append(label);for(const date of dates){const count=events.filter(e=>e.kind===kind&&dayKey(new Date(e.at))===date).length;const b=document.createElement("button");b.className="matrix-cell"+(count?" active-cell":"");text(b,count?String(count):"·");b.title=date+" · "+kind+" · "+count;b.onclick=()=>{daySelected=date;calendarYear=Number(date.slice(0,4));autoYear=calendarYear===new Date().getFullYear();renderCalendar()};el.append(b)}}text($("skill-count"),String(state.nodes.filter(n=>n.category==="Навыки").length));text($("routine-count"),"Модуль рутин не подключён")}
+renderCalendar();
 function syncRanges(){for(const id of ["speed","strength","group-size","density","zoom"]){const el=$<HTMLInputElement>(id),v=Number(el.value);el.style.setProperty("--fill",100*(v-Number(el.min))/(Number(el.max)-Number(el.min))+"%");text($(id+"-value"),v.toFixed(id==="density"?0:2))}}
 document.addEventListener("input",syncRanges);setInterval(syncRanges,250);syncRanges();$("toggle-panel").onclick=()=>{const hidden=document.body.classList.toggle("panel-hidden");$("toggle-panel").setAttribute("aria-pressed",String(hidden));resize()};
 void loadSettings();void loadEvents();
 text($("legend"),"Нажмите на ядро, чтобы открыть полный атлас");
 let lastDay=dayKey(new Date());
-function clock(){const now=new Date();text($("clock"),now.toLocaleTimeString("ru-RU"));text($("clock-date"),now.toLocaleDateString("ru-RU",{weekday:"long",day:"numeric",month:"long",year:"numeric"}));text($("clock-zone"),Intl.DateTimeFormat().resolvedOptions().timeZone||"Местное время");const key=dayKey(now);if(key!==lastDay){lastDay=key;renderCalendar()}}clock();setInterval(clock,1000);
-$("today").onclick=()=>{const d=new Date();month=d;daySelected=dayKey(d);renderCalendar()};
+function updateCalendarDate(now:Date){const key=dayKey(now);if(key!==lastDay){const rollover=key.slice(0,4)!==lastDay.slice(0,4),wasToday=daySelected===lastDay;lastDay=key;if(rollover){autoYear=true;calendarYear=now.getFullYear();daySelected=key}else if(autoYear&&wasToday)daySelected=key;renderCalendar(now)}}
+function clock(){const now=new Date();text($("clock"),now.toLocaleTimeString("ru-RU"));text($("clock-date"),now.toLocaleDateString("ru-RU",{day:"numeric",month:"short",weekday:"short"}));updateCalendarDate(now)}clock();setInterval(clock,1000);
 type ChatMessage={id:number;role:"user"|"system";content:string;created_at:string};
 let chatBusy=false,chatReady=false,chatMessages:ChatMessage[]=[];
 const chatInput=$<HTMLTextAreaElement>("chat-input"),chatSend=$<HTMLButtonElement>("chat-send");
