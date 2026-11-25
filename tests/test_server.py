@@ -86,6 +86,32 @@ class AtlasTest(unittest.TestCase):
                 server.send_chat(value)
         self.assertEqual(len(server.get_chat()["messages"]),4)
 
+    def test_calendar_manifest(self):
+        from unittest.mock import patch
+        record={"year":2027,"source":"https://www.consultant.ru/document/cons_doc_LAW_544706/","decree":"1187","reviewed":True,"rest":["02-22","05-03","05-10","06-14","11-05","12-31"],"short":["02-20","04-30","06-11","11-03"],"work":[],"totals":{"work":247,"rest":118,"short":4,"h40":1972}}
+        result=server.save_calendar_manifest({"schema":1,"calendars":[record]})
+        self.assertEqual(result["calendars"][0]["year"],2027)
+        for bad in ({**record,"source":"https://evil.example/x"},{**record,"reviewed":False},{**record,"rest":["02-30"]},{**record,"totals":{"work":0}},{**record,"short":["02-22"]}):
+            with self.assertRaises(ValueError):
+                server.save_calendar_manifest({"schema":1,"calendars":[bad]})
+        with patch.object(server,"urlopen",side_effect=OSError("offline")):
+            self.assertEqual(len(server.refresh_calendars()["calendars"]),1)
+        server.initialize()
+        self.assertEqual(len(server.get_calendars()["calendars"]),1)
+        bundled=server.load_bundled_calendars()
+        self.assertEqual([r["year"] for r in bundled["calendars"]],[2026,2027])
+        import json
+        from io import BytesIO
+        class FeedResponse(BytesIO):
+            def geturl(self):
+                return server.CALENDAR_FEED
+        raw=(server.ROOT / "calendar" / "production-calendar.json").read_bytes()
+        with patch.object(server,"urlopen",return_value=FeedResponse(raw)):
+            self.assertEqual(len(server.refresh_calendars()["calendars"]),2)
+        with patch.object(server,"urlopen",return_value=FeedResponse(b'{"schema":2}')):
+            self.assertIn("не принято",server.refresh_calendars()["status"])
+        self.assertEqual(len(server.get_calendars()["calendars"]),2)
+
     def test_invalid(self):
         with self.assertRaises(ValueError):
             server.add_node("","Знания")

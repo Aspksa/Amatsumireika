@@ -1,8 +1,11 @@
 """Local-only atlas API and static frontend; no third-party Python packages."""
 import argparse
 import math
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date, timedelta
 import json
+from urllib.request import urlopen
+from urllib.error import URLError
+from threading import Lock
 import sqlite3
 import webbrowser
 from pathlib import Path
@@ -29,6 +32,7 @@ def initialize():
         db.execute("CREATE TABLE IF NOT EXISTS ui_settings(id INTEGER PRIMARY KEY CHECK(id=1), payload TEXT NOT NULL)")
         db.execute("CREATE TABLE IF NOT EXISTS atlas_events(id INTEGER PRIMARY KEY, at TEXT NOT NULL, kind TEXT NOT NULL, detail TEXT NOT NULL)")
         db.execute("CREATE TABLE IF NOT EXISTS chat_messages(id INTEGER PRIMARY KEY, role TEXT NOT NULL CHECK(role IN ('user','system')), content TEXT NOT NULL, created_at TEXT NOT NULL)")
+        db.execute("CREATE TABLE IF NOT EXISTS production_calendars(year INTEGER PRIMARY KEY, payload TEXT NOT NULL)")
         columns = {r[1] for r in db.execute("PRAGMA table_info(nodes)")}
         if "folder" not in columns:
             db.execute("ALTER TABLE nodes ADD COLUMN folder TEXT NOT NULL DEFAULT ''")
@@ -39,6 +43,92 @@ def initialize():
 def event(db, kind, detail):
     db.execute("INSERT INTO atlas_events(at,kind,detail) VALUES(?,?,?)",
                (datetime.now(timezone.utc).isoformat(), kind, detail))
+
+# Only reviewed manifests in this project's canonical repository are accepted.
+CALENDAR_FEED = "https://raw.githubusercontent.com/Aspksa/Amatsumireika/main/calendar/production-calendar.json"
+CALENDAR_LOCK = Lock()
+HOLIDAYS = {"01-01","01-02","01-03","01-04","01-05","01-06","01-07","01-08","02-23","03-08","05-01","05-09","06-12","11-04"}
+
+def validate_calendar(record):
+    if not isinstance(record, dict):
+        raise ValueError("Invalid calendar")
+    y = record.get("year")
+    if type(y) is not int or not 2026 <= y <= 2100:
+        raise ValueError("Invalid year")
+    source = record.get("source")
+    if not isinstance(source,str) or len(source)>500:
+        raise ValueError("Missing source")
+    url = urlsplit(source)
+    if url.scheme!="https" or url.hostname not in {"publication.pravo.gov.ru","pravo.gov.ru","government.ru","www.consultant.ru","base.garant.ru"} or url.username or url.password or not url.path.strip("/"):
+        raise ValueError("Untrusted source")
+    if record.get("reviewed") is not True or not isinstance(record.get("decree"),str) or not record["decree"].strip() or len(record["decree"])>160:
+        raise ValueError("Maintainer review and decree required")
+    groups = {}
+    for key in ("rest","short","work"):
+        values=record.get(key,[])
+        if not isinstance(values,list) or len(values)>366 or any(not isinstance(v,str) for v in values):
+            raise ValueError("Invalid days")
+        for v in values:
+            if date.fromisoformat(f"{y}-{v}").strftime("%m-%d")!=v or v in HOLIDAYS:
+                raise ValueError("Invalid override")
+        if len(set(values))!=len(values):
+            raise ValueError("Duplicate day")
+        groups[key]=set(values)
+    if any(groups[a]&groups[b] for a,b in (("rest","short"),("rest","work"),("short","work"))):
+        raise ValueError("Conflicting overrides")
+    d=date(y,1,1); days=0; work=0; short=0
+    while d.year==y:
+        key=d.strftime("%m-%d"); days+=1
+        if key not in HOLIDAYS and key not in groups["rest"] and (key in groups["short"] or key in groups["work"] or d.weekday()<5):
+            work+=1; short+=int(key in groups["short"])
+        d+=timedelta(days=1)
+    expected={"work":work,"rest":days-work,"short":short,"h40":work*8-short}
+    if record.get("totals")!=expected:
+        raise ValueError("Totals mismatch")
+    return dict(year=y,source=source,decree=record["decree"],reviewed=True,rest=sorted(groups["rest"]),short=sorted(groups["short"]),work=sorted(groups["work"]),totals=expected)
+
+def save_calendar_manifest(manifest):
+    if not isinstance(manifest,dict) or manifest.get("schema")!=1 or not isinstance(manifest.get("calendars"),list) or len(manifest["calendars"])>75:
+        raise ValueError("Invalid manifest")
+    records=[validate_calendar(r) for r in manifest["calendars"]]
+    if len({r["year"] for r in records})!=len(records):
+        raise ValueError("Duplicate year")
+    with closing(connect()) as db, db:
+        for r in records:
+            db.execute("INSERT OR IGNORE INTO production_calendars(year,payload) VALUES(?,?)",(r["year"],json.dumps(r,ensure_ascii=False)))
+    return get_calendars()
+
+def get_calendars():
+    with closing(connect()) as db:
+        return {"calendars":[json.loads(r[0]) for r in db.execute("SELECT payload FROM production_calendars ORDER BY year")],"status":"Локальные данные"}
+
+def load_bundled_calendars():
+    try:
+        raw=(ROOT / "calendar" / "production-calendar.json").read_bytes()
+        if len(raw)>262144:
+            raise ValueError("Manifest too large")
+        return save_calendar_manifest(json.loads(raw))
+    except (OSError,ValueError,TypeError):
+        return get_calendars()
+
+def refresh_calendars():
+    if not CALENDAR_LOCK.acquire(blocking=False):
+        return {**get_calendars(),"status":"Обновление уже выполняется"}
+    try:
+        # No user-provided fetch URL, no credentials, bounded response.
+        with urlopen(CALENDAR_FEED,timeout=5) as response:
+            if response.geturl()!=CALENDAR_FEED:
+                raise ValueError("Unexpected redirect")
+            raw=response.read(262145)
+        if len(raw)>262144:
+            raise ValueError("Manifest too large")
+        result=save_calendar_manifest(json.loads(raw))
+        result["status"]="Проверены структура и нормы · источник: проверенный сопровождающим манифест"
+        return result
+    except (OSError,URLError,ValueError,TypeError):
+        return {**get_calendars(),"status":"Обновление не принято · локальные данные сохранены"}
+    finally:
+        CALENDAR_LOCK.release()
 
 def get_settings():
     with closing(connect()) as db:
@@ -147,6 +237,8 @@ class Handler(BaseHTTPRequestHandler):
         path=urlsplit(self.path).path
         if path=="/api/atlas":
             self.reply(200,snapshot())
+        elif path=="/api/calendar":
+            self.reply(200,get_calendars())
         elif path=="/api/chat":
             self.reply(200,get_chat())
         elif path=="/api/settings":
@@ -173,6 +265,9 @@ class Handler(BaseHTTPRequestHandler):
             data=json.loads(self.rfile.read(n))
             if not isinstance(data,dict):
                 raise ValueError("Expected object")
+            if self.path=="/api/calendar/refresh":
+                self.reply(200,refresh_calendars())
+                return
             if self.path=="/api/chat":
                 self.reply(200,send_chat(data.get("content")))
                 return
@@ -198,6 +293,7 @@ def main():
     parser.add_argument("--port",type=int,default=0)
     args=parser.parse_args()
     initialize()
+    load_bundled_calendars()
     with ThreadingHTTPServer(("127.0.0.1",args.port),Handler) as server:
         url=f"http://127.0.0.1:{server.server_port}"
         print(url,flush=True)
