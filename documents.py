@@ -124,7 +124,8 @@ def upload(path,data):
     if ext==".gif" and raw[:6] not in (b"GIF87a",b"GIF89a"):raise ValueError("Не GIF")
     if ext==".webp" and not (raw[:4]==b"RIFF" and raw[8:12]==b"WEBP"):raise ValueError("Не WebP")
     sha=hashlib.sha256(raw).hexdigest()
-    status,content=extract(name,raw)
+    deferred=data.get("defer") is True
+    status,content=("queued","") if deferred else extract(name,raw)
     blob=uuid.uuid4().hex
     root(path).mkdir(parents=True,exist_ok=True)
     target=path_for(path,blob)
@@ -146,6 +147,9 @@ def upload(path,data):
                 import cognitive
                 db.execute("INSERT INTO cog_memory(node_id,kind,subject,fingerprint,source,at,confidence,priority) VALUES(?,?,?,?,?,?,?,?)",(node,"document","",sha,"document:"+str(ident),now(),1,2))
                 db.execute("INSERT INTO atlas_events(at,kind,detail) VALUES(?,?,?)",(now(),"node","Документ: "+name))
+                if deferred:
+                    import document_workspace
+                    document_workspace.enqueue(db,ident)
                 event(db,ident,"Документ загружен",node)
                 result=meta(get(db,ident))
                 db.commit()

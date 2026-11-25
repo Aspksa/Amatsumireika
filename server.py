@@ -5,6 +5,7 @@ import gateway
 import cognitive
 import evolution
 import documents
+import document_workspace
 import memory_engine as memory
 import budget
 import logging
@@ -57,6 +58,12 @@ def initialize():
                 temp=backup.with_suffix(".tmp")
                 with closing(sqlite3.connect(temp)) as dest:db.backup(dest)
                 temp.replace(backup)
+        if db.execute("PRAGMA user_version").fetchone()[0]<8 and memory.table(db,"nodes"):
+            backup=DB.with_name(DB.name+".before-v8.bak")
+            if not backup.exists():
+                temp=backup.with_suffix(".tmp")
+                with closing(sqlite3.connect(temp)) as dest:db.backup(dest)
+                temp.replace(backup)
         db.executescript("""
         CREATE TABLE IF NOT EXISTS nodes(id INTEGER PRIMARY KEY, title TEXT NOT NULL, category TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS edges(source INTEGER REFERENCES nodes(id), target INTEGER REFERENCES nodes(id), PRIMARY KEY(source,target), CHECK(source<target));
@@ -82,6 +89,7 @@ def initialize():
         cognitive.init(db)
         evolution.init(db)
         documents.init(db)
+        document_workspace.init(db)
         documents.root(DB).mkdir(parents=True,exist_ok=True)
         memory.init_index(db)
         db.execute("CREATE TABLE IF NOT EXISTS atlas_revision(id INTEGER PRIMARY KEY CHECK(id=1),version INTEGER NOT NULL)")
@@ -96,7 +104,7 @@ def initialize():
             db.execute("PRAGMA user_version=5")
         if db.execute("PRAGMA user_version").fetchone()[0]<6:
             db.execute("PRAGMA user_version=6")
-        if db.execute("PRAGMA user_version").fetchone()[0]<7:db.execute("PRAGMA user_version=7")
+        if db.execute("PRAGMA user_version").fetchone()[0]<8:db.execute("PRAGMA user_version=8")
 
 def event(db, kind, detail):
     db.execute("INSERT INTO atlas_events(at,kind,detail) VALUES(?,?,?)",
@@ -432,6 +440,9 @@ def send_chat(content):
             append("system","Локальные команды: /статус, /найти текст, /документы текст, /план задача. Облачный ответ требует отдельного согласия.")
         elif command.startswith("/план "):
             result=cognitive.adaptive_plan(DB,content[6:],db);append("system","Локальный план: "+"; ".join(result["steps"]))
+        elif command.startswith("/поиск-фрагмента "):
+            result=document_workspace.excerpts(DB,content[16:][:300])
+            append("system","Фрагменты документов: "+("\n".join("#"+str(x["id"])+" "+x["name"]+": "+x["excerpt"] for x in result["sources"]) or "Совпадений нет"))
         elif command.startswith("/документы "):
             matches=documents.list_docs(DB,content[11:][:300])["files"][:8]
             append("system","Документы: "+("; ".join("#"+str(r["id"])+" "+r["name"] for r in matches) or "Совпадений нет"))
@@ -563,6 +574,12 @@ class Handler(BaseHTTPRequestHandler):
         elif path=="/api/documents":
             q=parse_qs(urlsplit(self.path).query)
             self.reply(200,documents.list_docs(DB,q.get("q",[""])[0],q.get("trash",["0"])[0]=="1",q.get("folder",[""])[0],int(q.get("after",["0"])[0])))
+        elif path=="/api/workspace/graph":
+            self.reply(200,document_workspace.graph(DB,int(parse_qs(urlsplit(self.path).query).get("after",["0"])[0])))
+        elif path=="/api/workspace/analytics":
+            self.reply(200,document_workspace.analytics(DB))
+        elif path=="/api/workspace/detail":
+            self.reply(200,document_workspace.details(DB,int(parse_qs(urlsplit(self.path).query).get("id",["0"])[0])))
         elif path=="/api/documents/health":
             self.reply(200,documents.health(DB))
         elif path=="/api/documents/by-node":
@@ -652,6 +669,10 @@ class Handler(BaseHTTPRequestHandler):
             data=json.loads(self.rfile.read(n))
             if not isinstance(data,dict):
                 raise ValueError("Expected object")
+            if self.path=="/api/workspace/action":
+                self.reply(200,document_workspace.mutate(DB,data));return
+            if self.path=="/api/workspace/ask":
+                self.reply(200,document_workspace.excerpts(DB,data.get("query"),data.get("id")));return
             if self.path=="/api/documents/upload":
                 self.reply(200,documents.upload(DB,data));return
             if self.path=="/api/documents/action":
@@ -767,7 +788,7 @@ def main():
                 except Exception:
                     logging.exception("Browser launch failed; server remains available")
             try:
-                with cognitive.worker(DB):
+                with cognitive.worker(DB), document_workspace.worker(DB):
                     server.serve_forever()
             except KeyboardInterrupt:
                 pass
