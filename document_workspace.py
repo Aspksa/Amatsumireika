@@ -8,6 +8,7 @@ from threading import Thread, Event, Lock
 import logging
 import documents as doc
 import memory_engine as memory
+import document_intelligence as intelligence
 
 LOCK=Lock()
 def init(db):
@@ -23,7 +24,7 @@ def step(path):
         with closing(doc.connect(path)) as db,db:
             db.execute("BEGIN IMMEDIATE")
             row=db.execute("SELECT j.document_id,d.name,d.blob,d.size,d.sha256 FROM document_jobs j JOIN documents d ON d.id=j.document_id WHERE j.status='queued' AND d.deleted IS NULL ORDER BY j.document_id LIMIT 1").fetchone()
-            if not row:return False
+            if not row:return intelligence.backfill_one(db)
             ident=row["document_id"]
             db.execute("UPDATE document_jobs SET status='running',attempts=attempts+1,updated=? WHERE document_id=?",(doc.now(),ident))
         try:
@@ -38,6 +39,7 @@ def step(path):
                 db.execute("UPDATE documents SET extract_status=?,content=? WHERE id=?",(status,content,ident))
                 db.execute("DELETE FROM document_terms WHERE document_id=?",(ident,))
                 db.executemany("INSERT OR IGNORE INTO document_terms VALUES(?,?)",((w,ident) for w in memory.terms(name+" "+item["folder"]+" "+content) if len(w)<=80))
+                if status=="indexed":intelligence.index_document(db,ident)
                 db.execute("UPDATE document_jobs SET status=?,updated=?,error=? WHERE document_id=?",("failed" if status in ("extraction_failed","unsupported_encoding") else "done",doc.now(),status if status in ("extraction_failed","unsupported_encoding") else "",ident))
                 doc.event(db,ident,"Индексация: "+status,item["node_id"])
         except Exception:
@@ -106,39 +108,17 @@ def details(path,ident):
         db.execute("BEGIN")
         r=doc.get(db,ident)
         q=tags(r["content"]) if r["extract_status"]=="indexed" else []
-        candidates=[]
-        if q:
-            marks=",".join("?" for _ in q)
-            rows=db.execute("SELECT d.id,d.name,d.node_id,d.folder,COUNT(*) overlap FROM document_terms t JOIN documents d ON d.id=t.document_id WHERE d.deleted IS NULL AND d.extract_status=\x27indexed\x27 AND d.id<>? AND t.term IN ("+marks+") GROUP BY d.id ORDER BY overlap DESC,d.id LIMIT 20",[ident]+q)
-            for other in rows:
-                candidates.append({**dict(other),"score":round(other["overlap"]/len(q),3)})
+        candidates=intelligence.related(db,r)
         links=[dict(x) for x in db.execute("""SELECT n.id,n.title,n.category FROM edges e JOIN nodes n ON n.id=CASE WHEN e.source=? THEN e.target ELSE e.source END WHERE (e.source=? OR e.target=?) AND NOT EXISTS(SELECT 1 FROM documents d WHERE d.node_id=n.id AND d.deleted IS NOT NULL) ORDER BY n.id LIMIT 100""",(r["node_id"],r["node_id"],r["node_id"]))]
         candidates_memory=[dict(x) for x in db.execute("SELECT c.id,c.title,c.kind,c.state FROM cog_candidates c JOIN document_sources s ON s.fingerprint=c.fingerprint WHERE s.document_id=? ORDER BY c.id DESC LIMIT 50",(ident,))]
         memories=[dict(x) for x in db.execute("SELECT DISTINCT n.id,n.title,m.kind FROM document_sources s JOIN nodes n ON n.id=s.node_id JOIN cog_memory m ON m.node_id=n.id WHERE s.document_id=? ORDER BY n.id LIMIT 50",(ident,))]
         linked_ids={x["id"] for x in links}
         versions=[dict(x) for x in db.execute("SELECT v.child,v.parent,p.name parent_name,c.name child_name FROM document_versions v JOIN documents p ON p.id=v.parent JOIN documents c ON c.id=v.child WHERE v.parent=? OR v.child=? ORDER BY v.child LIMIT 50",(ident,ident))]
         job=db.execute("SELECT status,attempts,error,updated FROM document_jobs WHERE document_id=?",(ident,)).fetchone()
-        # structured claims are compared only when explicit labels exist
-        claims={}
-        for line in (r["content"] if r["extract_status"]=="indexed" else "").splitlines()[:2000]:
-            m=re.fullmatch(r"\s*факт\s*:\s*([^=:]{1,80})\s*[=:]\s*(.{1,120})",line,re.I)
-            if m:claims.setdefault(memory.norm(m[1]),set()).add(memory.norm(m[2]))
-        evidence=[]
-        for subject,values in list(claims.items())[:20]:
-            if len(values)>1:evidence.append({"subject":subject,"document":ident,"kind":"внутреннее расхождение","values":sorted(values)})
-            subject_terms=sorted(memory.terms(subject))
-            if not subject_terms:continue
-            marks=",".join("?" for _ in subject_terms)
-            others=db.execute("SELECT d.id,d.content FROM documents d JOIN (SELECT DISTINCT document_id FROM document_terms WHERE term IN ("+marks+")) t ON t.document_id=d.id WHERE d.id<>? AND d.deleted IS NULL AND d.extract_status='indexed' ORDER BY d.id LIMIT 100",subject_terms+[ident])
-            for other in others:
-                if len(evidence)>=40:break
-                for line in other["content"].splitlines()[:2000]:
-                    m=re.fullmatch(r"\s*факт\s*:\s*([^=:]{1,80})\s*[=:]\s*(.{1,120})",line,re.I)
-                    if m and memory.norm(m[1])==subject:
-                        value=memory.norm(m[2])
-                        evidence.append({"subject":subject,"document":other["id"],"kind":"совпадение" if value in values else "возможное противоречие","values":[value]})
-                        break
-        return {"tags":q,"suggestions":[c for c in candidates if c["node_id"] not in linked_ids],"links":links,"candidates":candidates_memory,"memories":memories,"versions":versions,"job":dict(job) if job else None,"evidence":evidence[:40],"words":len(words(r["content"])),"characters":len(r["content"]),"folder_hint":candidates[0]["folder"] if candidates and candidates[0]["score"]>=.3 else ""}
+        evidence=intelligence.conflicts(db,r)
+        classification=intelligence.classification_state(db,r)
+        return {"tags":q,"suggestions":[c for c in candidates if c["node_id"] not in linked_ids],"links":links,"candidates":candidates_memory,"memories":memories,"versions":versions,"job":dict(job) if job else None,"evidence":evidence,"words":len(words(r["content"])),"characters":len(r["content"]),"folder_hint":candidates[0]["folder"] if candidates and candidates[0]["score"]>=.3 else "","classification":classification,"provenance":intelligence.provenance(db,r),"fragments":db.execute("SELECT fragment_count FROM doc_fragment_state WHERE document_id=?",(ident,)).fetchone()[0] if db.execute("SELECT 1 FROM doc_fragment_state WHERE document_id=?",(ident,)).fetchone() else 0,"fragment_pending":intelligence.pending(db)}
+
 def mutate(path,data):
     action=data.get("action")
     ident=data.get("id")
@@ -176,28 +156,7 @@ def mutate(path,data):
         else:raise ValueError("Unknown action")
     return {"ok":True}
 def excerpts(path,query,ident=None):
-    if not isinstance(query,str) or not query.strip() or len(query)>300:raise ValueError("Укажите вопрос до 300 символов")
-    terms=memory.terms(query)
-    if not terms:return {"sources":[]}
-    with closing(doc.connect(path)) as db:
-        if ident is not None: rows=[doc.get(db,ident)]
-        else:
-            marks=",".join("?" for _ in terms)
-            rows=db.execute("SELECT d.* FROM documents d JOIN (SELECT t.document_id,COUNT(*) hits FROM document_terms t JOIN documents active ON active.id=t.document_id WHERE active.deleted IS NULL AND active.extract_status=\x27indexed\x27 AND term IN ("+marks+") GROUP BY t.document_id ORDER BY hits DESC LIMIT 30) t ON d.id=t.document_id WHERE d.deleted IS NULL ORDER BY t.hits DESC,d.id",tuple(sorted(terms))).fetchall()
-        result=[]
-        for row in rows:
-            if row["extract_status"]!="indexed":continue
-            # Preserve exact source fragments; no synthetic answer or cloud requests.
-            best=[]
-            for line in row["content"].splitlines()[:4000]:
-                for i in range(0,min(len(line),200000),600):
-                    piece=line[i:i+600].strip()
-                    score=len(terms & memory.terms(piece))
-                    if score:best.append((score,piece))
-            if best:
-                best.sort(key=lambda x:-x[0]);result.append({"id":row["id"],"name":row["name"],"excerpt":best[0][1],"matches":best[0][0]})
-        result.sort(key=lambda x:-x["matches"])
-        return {"sources":result[:8]}
+    return intelligence.search(path,query,ident)
 def analytics(path):
     with closing(doc.connect(path)) as db:
         db.execute("BEGIN")
@@ -225,7 +184,7 @@ def quality(path):
             if row["name"]!=row["title"] or row["folder"]!=row["node_folder"]:wrong_metadata.append(row["id"])
         for row in db.execute("SELECT s.node_id,d.node_id FROM document_sources s JOIN documents d ON d.id=s.document_id WHERE s.node_id IS NOT NULL AND s.node_id<>d.node_id"):
             if not db.execute("SELECT 1 FROM edges WHERE source=? AND target=?",tuple(sorted(row))).fetchone():missing_edges.append(list(row))
-        return {"foreign_keys":sum(1 for _ in db.execute("PRAGMA foreign_key_check")),"index_mismatch":wrong_index,"metadata_mismatch":wrong_metadata,"source_edges_missing":missing_edges}
+        return {"foreign_keys":sum(1 for _ in db.execute("PRAGMA foreign_key_check")),"index_mismatch":wrong_index,"metadata_mismatch":wrong_metadata,"source_edges_missing":missing_edges,"fragment_pending":intelligence.pending(db)}
 
 
 def clusters(db,rows):
