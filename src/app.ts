@@ -326,13 +326,14 @@ function geometryDates(y:number){let result=timeDateCache.get(y);if(!result){res
 function timeReference(now:Date){return historyDate?new Date(historyDate+"T12:00:00"):now}
 function timePoint(a:number,r:number):Point{return{x:160+Math.cos(a)*r,y:160+Math.sin(a)*r}}
 // One open radial spiral, advancing counterclockwise so its silhouette descends clockwise.
-const spiralInner=73;
+const spiralInner=60;
+function timeInner(detail:boolean){return detail?73:spiralInner}
 function spiralAngle(i:number,n:number){return -Math.PI/2-tau*(i+.5)/n}
 function spiralIndex(x:number,y:number,n:number){const a=(-Math.atan2(y,x)-Math.PI/2+tau)%tau;return Math.min(n-1,Math.floor(a/tau*n))}
 function timeGeometry(y:number,m:number|null):TimeRay[]{
  const k=y+":"+m,old=timeGeometryCache.get(k);if(old)return old;
  const dates=geometryDates(y).filter(d=>m===null||d.getMonth()===m);
- const result=dates.map((d,i)=>{const a=spiralAngle(i,dates.length);return {d,type:productionDay(d),p:timePoint(a,spiralInner),q:timePoint(a,spiralInner+calendarRayLength(d,m!==null))}});
+ const inner=timeInner(m!==null),result=dates.map((d,i)=>{const a=spiralAngle(i,dates.length);return {d,type:productionDay(d),p:timePoint(a,inner),q:timePoint(a,inner+calendarRayLength(d,m!==null))}});
  if(timeGeometryCache.size>=32)timeGeometryCache.delete(timeGeometryCache.keys().next().value!);
  timeGeometryCache.set(k,result);return result
 }
@@ -387,11 +388,11 @@ function cinemaWave(c:CanvasRenderingContext2D,now:number,at:number,duration:num
 function cinemaDraw(c:CanvasRenderingContext2D,now:number,d:Date,dt:number,budget:ReturnType<typeof cinemaBudget>){
  const sec=d.getSeconds()+d.getMilliseconds()/1000,min=d.getMinutes()+sec/60,hr=d.getHours()%12+min/60;
  const gold=paper()?"#80550f":"#ffd17a",light=paper()?"#586779":"#f5eee1",muted=paper()?"#a58d62":"#a9854b";
- const a=-Math.PI/2+tau*sec/60;
- cinemaRing(c,69,-Math.PI/2,a,gold,1.5);
- cinemaRing(c,65,-Math.PI/2,-Math.PI/2+tau*min/60,light,.8,.85);
- cinemaRing(c,61,-Math.PI/2,-Math.PI/2+tau*hr/12,muted,.7,.7);
- const p=timePoint(a,69);c.fillStyle=gold;c.beginPath();c.arc(p.x,p.y,2,0,tau);c.fill();
+ const a=-Math.PI/2+tau*sec/60,inner=timeInner(detailMonth!==null);
+ cinemaRing(c,inner-4,-Math.PI/2,a,gold,1.5);
+ cinemaRing(c,inner-8,-Math.PI/2,-Math.PI/2+tau*min/60,light,.8,.85);
+ cinemaRing(c,inner-12,-Math.PI/2,-Math.PI/2+tau*hr/12,muted,.7,.7);
+ const p=timePoint(a,inner-4);c.fillStyle=gold;c.beginPath();c.arc(p.x,p.y,2,0,tau);c.fill();
  const rays=timeGeometry(displayedYear(d),detailMonth);
  // Static hover highlighting survives reduced motion and disabled decorative effects.
  if(chronosPreviewRay)cinemaLine(c,chronosPreviewRay.p,chronosPreviewRay.q,gold,2.4,.9);
@@ -403,8 +404,8 @@ function cinemaDraw(c:CanvasRenderingContext2D,now:number,d:Date,dt:number,budge
  const lf=(now-chronosLinkAt)/650,linked=lf>=0&&lf<1?rays.find(v=>dayKey(v.d)===chronosLinkDate):undefined;
  if(linked&&lf>=0&&lf<1){const t=eased(lf),q={x:linked.p.x+(linked.q.x-linked.p.x)*t,y:linked.p.y+(linked.q.y-linked.p.y)*t};cinemaGlow(c,q.x,q.y,7,gold,Math.sin(Math.PI*lf)*power);cinemaLine(c,linked.p,q,gold,1.8,(1-lf)*power)}
  cinemaYearTransition(c,now,power);
- cinemaWave(c,now,cinemaRevealAt,650,gold,72,138,.36*power);
- cinemaWave(c,now,cinemaBirthAt,900,gold,73,142,.3*power);
+ cinemaWave(c,now,cinemaRevealAt,650,gold,inner-1,inner+(detailMonth===null?108:66),.36*power);
+ cinemaWave(c,now,cinemaBirthAt,900,gold,inner,inner+(detailMonth===null?112:70),.3*power);
  seasonalHighlights(c,filled,phase,budget,power);
  cinemaGlow(c,p.x,p.y,7,gold,.65*power);
  if(filled.length){
@@ -462,11 +463,13 @@ function monthWeek(d:Date){const first=new Date(d.getFullYear(),d.getMonth(),1,1
 function calendarRayLength(d:Date,detail=false){
  const w=monthWeek(d),m=d.getMonth();
  // A whole week is a visible band of equal-length daily rays. Every month begins above the preceding month.
- const progress=detail?(w.index+1)/w.count:(m+(w.index+1)/w.count)/12;
- return 3+63*Math.pow(progress,2.1);
+ if(detail)return 3+63*Math.pow((w.index+1)/w.count,2.1);
+ // Stronger month steps, gentler weekly shelves: the yearly fan grows almost linearly.
+ const progress=(m+.35+.65*(w.index+1)/w.count)/12;
+ return 8+100*Math.pow(progress,1.18);
 }
-// Keep the logical spiral geometry unchanged; reserve an outer label gutter in annual view.
-const annualTimeSide=384;
+// Longer annual rays with room for full outward-facing month labels.
+const annualTimeSide=440;
 function timeViewSide(detail:boolean){return detail?320:annualTimeSide}
 function timeCanvasTransform(c:CanvasRenderingContext2D,size:number,detail:boolean){
  const scale=size/timeViewSide(detail),offset=size/2-160*scale;
@@ -485,8 +488,8 @@ function monthLabelLayout(y:number,m:number){
  return {angle,radius,width,ux,uy,label:fullMonthNames[m]};
 }
 function calendarHit(x:number,y:number,days:Date[],detail:boolean){
- const r=Math.hypot(x,y);if(r<spiralInner-2||!days.length||Math.max(Math.abs(x),Math.abs(y))>timeViewSide(detail)/2)return null;
- const date=days[spiralIndex(x,y,days.length)],tip=spiralInner+calendarRayLength(date,detail);
+ const r=Math.hypot(x,y),inner=timeInner(detail);if(r<inner-2||!days.length||Math.max(Math.abs(x),Math.abs(y))>timeViewSide(detail)/2)return null;
+ const date=days[spiralIndex(x,y,days.length)],tip=inner+calendarRayLength(date,detail);
  if(r<=tip+5)return {date,month:false};
  if(!detail){
   const layout=monthLabelLayout(date.getFullYear(),date.getMonth()),along=x*layout.ux+y*layout.uy,across=-x*layout.uy+y*layout.ux;
@@ -552,7 +555,7 @@ function drawYear(now=chronosNow()){
  const box=wheel.getBoundingClientRect();const side=Math.max(1,Math.min(box.width,box.height));if(side<=1)return;
  const size=Math.max(1,Math.round(side*Math.min(devicePixelRatio||1,2)));if(wheel.width!==size)wheel.width=size;if(wheel.height!==size)wheel.height=size;
  const c=wheelCtx;timeCanvasTransform(c,size,detailMonth!==null);$("left").setAttribute("data-time-detail",detailMonth===null?"year":"month");
- const center=160,inner=spiralInner,step=tau/days.length;
+ const center=160,inner=timeInner(detailMonth!==null),step=tau/days.length;
  const dark=!paper(),base=dark?"#79664b":"#9b8a70",ink=dark?"#e8e1d2":"#3e362b",gold=dark?"#ffd17a":"#80550f";
  const point=(angle:number,r:number)=>({x:center+Math.cos(angle)*r,y:center+Math.sin(angle)*r});
  function stroke(a:number,b:number,r:number,color:string,w:number){c.beginPath();c.arc(center,center,r,a,b);c.strokeStyle=color;c.lineWidth=w;c.stroke()}
@@ -615,6 +618,8 @@ function monthDayKind(d:Date):DayType{
 function renderMonthGrid(current:Date,now:Date){
  const y=current.getFullYear(),m=current.getMonth(),selected=dayKey(current),today=dayKey(now),root=$("month-grid");
  text($("month-heading"),current.toLocaleDateString("ru-RU",{month:"long",year:"numeric"}));$("spiral-tooltip").hidden=true;
+ const dateLabel=(d:Date)=>d.toLocaleDateString("ru-RU",{day:"numeric",month:"long",year:"numeric"});
+ text($("chrono-today-label"),"Сегодня: "+dateLabel(now));text($("chrono-selected-label"),"Выбрано: "+dateLabel(current));
  const signature=[selected,today,JSON.stringify(productionRules[y]??null),detailMonth].join("|");
  if(signature===chronosRenderKey)return;
  $<HTMLInputElement>("chrono-jump").value=selected;chronosPreview("");
@@ -633,7 +638,7 @@ function renderMonthGrid(current:Date,now:Date){
   if(k===today){b.classList.add("is-today");b.setAttribute("aria-current","date")}
   if(k===selected)b.classList.add("is-selected");
   b.setAttribute("aria-pressed",String(k===selected));const kindLabel=productionRules[y]?dayNames[kind]:kind==="holiday"?"Фиксированный праздник":kind==="weekend"?"Обычный выходной":"Предварительно рабочий день";
-  const label=d.toLocaleDateString("ru-RU",{weekday:"long",day:"numeric",month:"long",year:"numeric"})+" · "+kindLabel;b.setAttribute("aria-label",label);b.title=label;
+  const label=d.toLocaleDateString("ru-RU",{weekday:"long",day:"numeric",month:"long",year:"numeric"})+" · "+kindLabel+(k===today?" · Сегодня":"")+(k===selected?" · Выбрано":"");b.setAttribute("aria-label",label);b.title=label;
   text(b,String(d.getDate()));b.addEventListener("pointerenter",()=>chronosPreview(k));b.addEventListener("pointerleave",()=>chronosPreview(""));b.addEventListener("focus",()=>chronosPreview(k));b.addEventListener("blur",()=>chronosPreview(""));b.onclick=()=>{selectMonthDate(d);const next=root.children[(d.getDay()+6)%7+7*Math.floor(((new Date(y,m,1,12).getDay()+6)%7+d.getDate()-1)/7)] as HTMLElement|undefined;next?.focus()};root.append(b);
   if(k===selected&&previousRect&&cinemaMotion()&&cinemaOnscreen()){
    const rect=b.getBoundingClientRect(),dx=previousRect.left-rect.left,dy=previousRect.top-rect.top;

@@ -47,14 +47,14 @@ async function main(){
   assert.equal(await evaluate('getComputedStyle(document.querySelector(".month-day.is-today"),"::before").borderTopStyle'),"solid");
   assert.ok(await evaluate('document.querySelector(".month-calendar").getBoundingClientRect().top-document.querySelector(".chrono-wheel").getBoundingClientRect().bottom>=23'),"calendar below wheel");
   assert.equal(await evaluate('document.querySelector("#spiral-tooltip").hidden'),true);
-  await evaluate('(()=>{const w=document.querySelector("#year-wheel"),r=w.getBoundingClientRect();w.dispatchEvent(new PointerEvent("pointermove",{clientX:r.left+r.width/2,clientY:r.top+r.height*(192-76)/384,bubbles:true}))})()');
+  await evaluate('(()=>{const w=document.querySelector("#year-wheel"),r=w.getBoundingClientRect();w.dispatchEvent(new PointerEvent("pointermove",{clientX:r.left+r.width/2,clientY:r.top+r.height*(220-65)/440,bubbles:true}))})()');
   assert.equal(await evaluate('document.querySelector("#spiral-tooltip").hidden'),false);
   await evaluate('document.querySelector("#year-wheel").dispatchEvent(new PointerEvent("pointerleave"))');
   assert.equal(await evaluate('document.querySelector("#spiral-tooltip").hidden'),true);
   assert.equal(await evaluate('document.querySelector("#left").dataset.timeDetail'),"year");
   const reset=()=>evaluate('document.querySelector("#month-grid").dispatchEvent(new KeyboardEvent("keydown",{key:"Home",bubbles:true}))');
   // December's radial label lies in the added gutter; click it to open month detail.
-  await evaluate(`(()=>{const w=document.querySelector("#year-wheel"),r=w.getBoundingClientRect(),y=new Date().getFullYear(),n=(Date.UTC(y+1,0,1)-Date.UTC(y,0,1))/86400000,a=-Math.PI/2-(n-15.5)*2*Math.PI/n;w.dispatchEvent(new PointerEvent("pointerup",{clientX:r.left+r.width*(.5+162*Math.cos(a)/384),clientY:r.top+r.height*(.5+162*Math.sin(a)/384),bubbles:true}))})()`);
+  await evaluate(`(()=>{const w=document.querySelector("#year-wheel"),r=w.getBoundingClientRect(),y=new Date().getFullYear(),n=(Date.UTC(y+1,0,1)-Date.UTC(y,0,1))/86400000,a=-Math.PI/2-(n-15.5)*2*Math.PI/n;w.dispatchEvent(new PointerEvent("pointerup",{clientX:r.left+r.width*(.5+190*Math.cos(a)/440),clientY:r.top+r.height*(.5+190*Math.sin(a)/440),bubbles:true}))})()`);
   assert.equal(await evaluate('document.querySelector("#left").dataset.timeDetail'),"month");
   assert.ok(await evaluate('document.querySelector("#month-heading").textContent.toLowerCase().includes("декабрь")'));
   await reset();
@@ -77,6 +77,10 @@ async function main(){
   await evaluate('document.querySelector("#month-heading").click()');
   assert.equal(await evaluate('document.querySelector("#month-heading").getAttribute("aria-pressed")'),"false");
   assert.equal(await evaluate('document.querySelectorAll("#month-grid .is-today").length'),1);
+  assert.ok(await evaluate('document.querySelector(".month-weekdays").getBoundingClientRect().top-document.querySelector(".month-nav").getBoundingClientRect().bottom>=22'),"month heading has breathing room");
+  const distinct=await evaluate(`(()=>{const today=document.querySelector(".month-day.is-today"),other=Array.from(document.querySelectorAll(".month-day")).find(b=>b!==today);other.click();const t=document.querySelector(".month-day.is-today"),s=document.querySelector(".month-day.is-selected");return {different:t!==s,today:t.getAttribute("aria-current"),selected:s.getAttribute("aria-pressed"),ring:getComputedStyle(t,"::before").borderTopWidth,fill:getComputedStyle(s,"::after").backgroundColor,todayText:document.querySelector("#chrono-today-label").textContent,selectedText:document.querySelector("#chrono-selected-label").textContent}})()`);
+  assert.equal(distinct.different,true);assert.equal(distinct.today,"date");assert.equal(distinct.selected,"true");assert.equal(distinct.ring,"2px");assert.equal(distinct.fill,"rgb(255, 209, 122)");assert.ok(distinct.todayText.startsWith("Сегодня:"));assert.ok(distinct.selectedText.startsWith("Выбрано:"));
+  await reset();
   const oldHeading=await evaluate('document.querySelector("#month-heading").textContent');
   await evaluate('document.querySelector("#month-next").click()');
   assert.notEqual(await evaluate('document.querySelector("#month-heading").textContent'),oldHeading);

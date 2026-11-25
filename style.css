@@ -415,3 +415,21 @@ h2{font:650 var(--type-xs)/1.4 var(--sans);letter-spacing:.08em}
 
 :root.paper #left .month-day.is-today,:root.paper #left .month-day.is-selected{background:transparent;color:var(--chrono-gold);outline:0;box-shadow:none}
 #left[data-cinema="off"] .month-day.ring-arrive::after,#left[data-cinema="quiet"] .month-day.ring-arrive::after{animation:none}
+
+/* Extended annual fan and independent today/selection markers. */
+#left[data-time-detail="year"] .chrono-clock{width:27.3%}
+#left[data-time-detail="year"] .chrono-clock #clock{font-size:clamp(11px,6.2cqw,28px);letter-spacing:-.045em}
+#left .month-nav{margin-bottom:12px}
+#left .chrono-date-status{display:flex;flex-wrap:wrap;justify-content:center;gap:6px 14px;margin:0 0 14px;font:500 clamp(10px,3.1cqw,12px)/1.45 var(--sans);color:var(--muted)}
+#left #chrono-today-label{color:var(--chrono-gold)}
+#left #chrono-today-label::before,#left #chrono-selected-label::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:1px;border:1px solid var(--chrono-gold)}
+#left #chrono-selected-label::before{background:var(--chrono-gold)}
+#left .month-weekdays{margin:0 0 8px}
+#left .month-day.is-today::before{inset:3%;border:2px solid var(--chrono-gold);animation:none;opacity:1;box-shadow:0 0 5px color-mix(in srgb,var(--chrono-gold) 35%,transparent);z-index:1}
+#left .month-day.is-selected::after,#left .month-day.is-today.is-selected::after{inset:13%;border:0;background:var(--chrono-gold);opacity:1;z-index:-1}
+#left .month-day.is-selected,#left .month-day.is-today.is-selected{color:#21180b}
+:root.paper #left .month-day.is-selected,:root.paper #left .month-day.is-today.is-selected{color:#fff6e5}
+#left .month-day.ring-arrive::after{animation:chronoSelectionSettle .24s ease-out both}
+@keyframes chronoSelectionSettle{from{transform:scale(.85)}to{transform:none}}
+#left[data-cinema="off"] .month-day.ring-arrive::after,#left[data-cinema="quiet"] .month-day.ring-arrive::after{animation:none}
+@media(prefers-reduced-motion:reduce){#left .month-day.ring-arrive::after{animation:none!important}}
