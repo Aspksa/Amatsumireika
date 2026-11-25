@@ -6,6 +6,7 @@ import cognitive
 import evolution
 import documents
 import document_backup
+import document_ocr
 import document_workspace
 import memory_engine as memory
 import budget
@@ -586,6 +587,13 @@ class Handler(BaseHTTPRequestHandler):
         elif path=="/api/workspace/graph":
             q=parse_qs(urlsplit(self.path).query)
             self.reply(200,document_workspace.graph(DB,int(q.get("after",["0"])[0]),q.get("q",[""])[0],q.get("folder",[""])[0],q.get("trash",["0"])[0]=="1"))
+        elif path=="/api/workspace/history":
+            self.reply(200,document_workspace.history(DB,int(parse_qs(urlsplit(self.path).query).get("id",["0"])[0])))
+        elif path=="/api/documents/thumbnail":
+            self.reply(200,document_ocr.pdf_thumbnail(DB,int(parse_qs(urlsplit(self.path).query).get("id",["0"])[0])),"image/png")
+        elif path=="/api/documents/snippet":
+            v=documents.preview(DB,int(parse_qs(urlsplit(self.path).query).get("id",["0"])[0]))
+            self.reply(200,{"text":v["text"][:500]})
         elif path=="/api/workspace/revision":
             self.reply(200,document_workspace.revision(DB))
         elif path=="/api/workspace/quality":
@@ -689,6 +697,14 @@ class Handler(BaseHTTPRequestHandler):
             data=json.loads(self.rfile.read(n))
             if not isinstance(data,dict):
                 raise ValueError("Expected object")
+            if self.path=="/api/workspace/repair":
+                if data!={"confirm":True}:raise ValueError("Подтвердите восстановление оригиналов")
+                self.reply(200,document_backup.repair(DB));return
+            if self.path=="/api/workspace/rebuild-sources":
+                if data!={"confirm":True}:raise ValueError("Подтвердите восстановление происхождения")
+                self.reply(200,document_workspace.rebuild_sources(DB));return
+            if self.path=="/api/workspace/ocr":
+                self.reply(200,document_ocr.run(DB,data.get("id")));return
             if self.path=="/api/workspace/backup":
                 if data!={"confirm":True}:raise ValueError("Подтвердите локальное резервирование")
                 self.reply(200,document_backup.backup(DB));return

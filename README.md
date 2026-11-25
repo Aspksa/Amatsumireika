@@ -129,3 +129,10 @@ Workspace UI: black/gold responsive tiles/list/gallery, folder tree and breadcru
 
 ### Imperial Integrity 8.1
 Explicit verified backup stores SQLite and all immutable originals (including trash) in data/backups. SHA-256 health check, source provenance across several documents, index invalidation and version-review goals. Document graph honors filters, includes outside-window degree counts and camera pan. Workspace refresh uses database revision; diagnostics compare indexed terms, file metadata and provenance edges. Conflict checks cover up to 100 indexed documents per explicit subject; no claim of exhaustive semantic verification. Backup restoration is manual, not automated; gallery still uses originals and graph still paginates. Existing lost provenance cannot be reconstructed automatically.
+
+### Imperial Integrity 8.2
+- Группировка текущего окна графа (до 200 документов) по ключевым словам и имеющимся в SQLite векторным кешам названий; без новых облачных запросов, без автоматического создания связей.
+- OCR Windows по кнопке для изображений и первых 10 страниц PDF, при наличии системного языка OCR. Текст требует проверки; Linux и недоступные кодеки сообщают об ограничении.
+- Реальные миниатюры изображений, текстовые фрагменты офисных документов, первая страница PDF через Windows по наведению или фокусу. Без офисного рендерера точное оформление DOCX/XLSX не воспроизводится.
+- История из сохранённых событий и явных источников; восстановление только доказуемых записей, утраченные исторические события не реконструируются.
+- Автовосстановление оригиналов по подтверждённому запросу из последних 30 локальных архивов, проверка SHA-256 и размера, карантин испорченных копий. Не заменяет живую SQLite и не восстанавливает удалённые строки. Новых зависимостей и платных запросов нет.

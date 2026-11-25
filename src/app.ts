@@ -963,6 +963,7 @@ async function diskLoad(after=0){const req=++diskReq;try{
 async function diskAction(action:string,data:object){if(diskBusy)return;diskBusy=true;try{const v=await jsonRequest("/api/documents/action",{action,...data});text($("disk-message"),action==="candidates"?"Проверено строк-кандидатов: "+v.scanned:"Готово");const selected=diskSelected;if(action==="trash"||action==="restore")diskClear();await diskLoad(diskAfter);if(selected&&action!=="trash"&&action!=="restore"&&action!=="folder"){const fresh=await jsonRequest("/api/documents/by-node?id="+selected.node_id);if(fresh.file&&diskSelected?.id===selected.id)void diskSelect(fresh.file)}await refreshAtlas();void diskAnalytics();if(diskMode==="graph")void diskGraphLoad(diskGraphAfter)}catch(err){text($("disk-message"),String(err))}finally{diskBusy=false}}
 async function diskSelect(file:DiskFile){diskClear();const req=diskDetailReq;diskSelected=file;diskGraphDraw();text($("disk-title"),file.name);text($("disk-meta"),diskSize(file.size)+" · "+(file.folder||"Корень")+" · "+(diskStatus[file.extract_status]??file.extract_status)+" · узел #"+file.node_id);
  const actions=$("disk-actions");if(file.deleted){actions.append(cogButton("Восстановить",()=>void diskAction("restore",{id:file.id})));return}
+ if(["preview_only","empty_text","extraction_failed"].includes(file.extract_status)&&/\.(pdf|png|jpe?g|gif|webp)$/i.test(file.name))actions.append(cogButton("OCR Windows",()=>void diskRunOcr(file)));
  const a=document.createElement("a");a.href="/api/documents/download?id="+file.id;a.download=file.name;text(a,"Скачать");actions.append(a,cogButton("В корзину",()=>{if(window.confirm("Переместить документ в корзину?"))void diskAction("trash",{id:file.id})}),cogButton("На карте",()=>{closeDisk();void evoFocus(file.node_id)}),cogButton("Извлечь кандидатов памяти",()=>void diskAction("candidates",{id:file.id})));
  const move=document.createElement("input");move.placeholder="Новая папка";move.value=file.folder;const target=document.createElement("input");target.type="number";target.min="1";target.placeholder="ID связанной записи";actions.append(move,cogButton("Переместить",()=>void diskAction("move",{id:file.id,folder:move.value})),target,cogButton("Связать с записью",()=>void diskAction("link",{id:file.id,node:Number(target.value)})));
  void diskInsights(file,req);
@@ -984,7 +985,7 @@ $("disk-health").onclick=async()=>{try{const v=await jsonRequest("/api/documents
 async function diskUploadFiles(files:File[],destination?:string){if(diskBusy)return;const input=$<HTMLInputElement>("disk-upload");if(!files.length)return;diskBusy=true;const dest=destination??$<HTMLSelectElement>("disk-folder").value;let ok=0,fail=0,duplicates=0;const failures:string[]=[];try{for(const file of files){try{if(file.size>20*1024*1024||!file.size)throw Error("Размер вне лимита");const raw=new Uint8Array(await file.arrayBuffer());let str="";for(let i=0;i<raw.length;i+=8192)str+=String.fromCharCode(...raw.subarray(i,i+8192));const result=await jsonRequest("/api/documents/upload",{name:file.name,folder:dest,data:btoa(str),defer:true});if(result.duplicate)duplicates++;else ok++}catch(err){fail++;failures.push(file.name+": "+String(err))}}input.value="";text($("disk-message"),"Загружено "+ok+" · дубликатов "+duplicates+" · ошибок "+fail+(failures.length?" · "+failures.slice(0,4).join("; "):""));diskTrash=false;$("disk-trash").setAttribute("aria-pressed","false");await diskLoad();await refreshAtlas();void diskAnalytics();if(diskMode==="graph")void diskGraphLoad(diskGraphAfter)}finally{diskBusy=false}}
 $("disk-upload-go").onclick=()=>void diskUploadFiles(Array.from($<HTMLInputElement>("disk-upload").files??[]));
 
-type DiskGraphNode={id:number;node_id:number;name:string;folder:string;size:number;extract_status:string;degree:number;outside:number};
+type DiskGraphNode={id:number;node_id:number;name:string;folder:string;size:number;extract_status:string;degree:number;outside:number;cluster?:number;cluster_label?:string;cluster_method?:string};
 type DiskGraph={nodes:DiskGraphNode[];edges:{source:number;target:number}[];versions:{child:number;parent:number}[];next:number|null;total:number;revision:number};
 let diskMode:"list"|"tiles"|"gallery"|"graph"="tiles",diskFiles:DiskFile[]=[],diskFolders:string[]=[],diskSelection=new Set<number>(),diskGraphReq=0,diskGraphAfter=0,diskGraph:DiskGraph|null=null,diskZoom=1,diskGraphPos=new Map<number,{x:number;y:number;r:number}>(),diskGraphBorn=0,diskGraphAnimation=false,diskAnalyticsReq=0,diskPollBusy=false,diskAfter=0,diskRevision=-1,diskAskReq=0,diskNodeReq=0,diskPan={x:0,y:0},diskDrag:{x:number;y:number;px:number;py:number}|null=null,diskMoved=false;
 const formatColors:Record<string,string>={pdf:"#d88d87",docx:"#89b7e0",xlsx:"#8ac7a7",csv:"#8ac7a7",png:"#c6a6e6",jpg:"#c6a6e6",jpeg:"#c6a6e6",gif:"#c6a6e6",webp:"#c6a6e6",md:"#d9bd82",txt:"#d9bd82",odt:"#89b7e0",ods:"#8ac7a7"};
@@ -1005,14 +1006,14 @@ function diskRenderTree(){
 }
 function diskChooseFolder(path:string){diskSelection.clear();const select=$<HTMLSelectElement>("disk-folder");if(path&&!Array.from(select.options).some(o=>o.value===path)){const o=document.createElement("option");o.value=path;text(o,path);select.append(o)}select.value=path;diskClear();void diskLoad();if(diskMode==="graph")void diskGraphLoad(0)}
 function diskRenderFiles(){
- const list=$("disk-list");list.replaceChildren();list.className="disk-view-"+diskMode;
+ const list=$("disk-list");diskMiniObserver?.disconnect();diskMiniQueue=[];list.replaceChildren();list.className="disk-view-"+diskMode;
  for(const file of diskFiles){
  const card=document.createElement("article");card.className="disk-card";card.style.setProperty("--file-accent",diskTint(file.name));
  const select=document.createElement("input");select.type="checkbox";select.checked=diskSelection.has(file.id);select.setAttribute("aria-label","Выбрать "+file.name);select.onchange=()=>{if(select.checked)diskSelection.add(file.id);else diskSelection.delete(file.id);card.classList.toggle("selected",select.checked);diskSelectedCount()};
  const b=document.createElement("button");b.type="button";b.className="disk-file";const icon=document.createElement("span"),name=document.createElement("strong"),meta=document.createElement("small");icon.className="disk-format-icon";text(icon,diskExt(file.name).toUpperCase());text(name,file.name);text(meta,(file.folder||"Корень")+" · "+diskSize(file.size)+" · "+(diskStatus[file.extract_status]??file.extract_status));b.append(icon,name,meta);b.onclick=()=>void diskSelect(file);card.append(select,b);card.classList.toggle("selected",select.checked);
  if(!file.deleted){card.draggable=true;card.ondragstart=e=>{e.dataTransfer?.setData("application/x-amatsumireika-document",String(file.id));if(e.dataTransfer)e.dataTransfer.effectAllowed="move"}}
  card.oncontextmenu=e=>{e.preventDefault();const menu=$("disk-context");menu.replaceChildren(cogButton("Открыть",()=>{diskCloseContext();void diskSelect(file)}),cogButton(file.deleted?"Восстановить":"В корзину",()=>{diskCloseContext();if(file.deleted||window.confirm("В корзину?"))void diskAction(file.deleted?"restore":"trash",{id:file.id})}));menu.style.left=Math.min(e.clientX,Math.max(0,innerWidth-210))+"px";menu.style.top=Math.min(e.clientY,Math.max(0,innerHeight-120))+"px";menu.hidden=false};
- if(diskMode==="gallery"&&!file.deleted&&/^(png|jpe?g|gif|webp)$/.test(diskExt(file.name))){const img=document.createElement("img");img.loading="lazy";img.alt=file.name;img.src="/api/documents/image?id="+file.id;b.prepend(img)}
+ if((diskMode==="gallery"||diskMode==="tiles")&&!file.deleted){const preview=document.createElement("div");preview.className="disk-mini";b.prepend(preview);diskMiniObserve(preview,file)}
  list.append(card);
  }if(!diskFiles.length)text(list,"Нет документов");diskSelectedCount();
 }
@@ -1029,6 +1030,7 @@ async function diskInsights(file:DiskFile,req:number){try{
  const v=await jsonRequest("/api/workspace/detail?id="+file.id);if(req!==diskDetailReq)return;const root=$("disk-insights");root.replaceChildren();
  const section=(title:string,lines:string[])=>{const el=document.createElement("section"),h=document.createElement("h3");text(h,title);el.append(h);for(const line of lines){const p=document.createElement("p");text(p,line);el.append(p)}root.append(el);return el};
  section("Паспорт документа",["SHA-256: "+file.sha256,"Создан: "+new Date(file.created).toLocaleString("ru-RU"),"Слов: "+v.words+" · символов: "+v.characters,"Ключевые слова: "+(v.tags.join(", ")||"нет"),"Очередь: "+(v.job?({queued:"ожидает",running:"обработка",done:"завершено",failed:"ошибка"} as Record<string,string>)[v.job.status]:"не требуется")]).append(cogButton("Переиндексировать",()=>void diskWorkspaceAction({action:"reindex",id:file.id})));
+ const history=section("История происхождения",["Записанные события и источники; утраченная история не додумывается."]);history.append(cogButton("Показать историю",()=>void diskShowHistory(file,req,history)));
  const linked=section("Подтверждённые связи",[]);for(const n of v.links)linked.append(cogButton("#"+n.id+" "+n.title+" · "+n.category,()=>{closeDisk();void evoFocus(n.id)}));
  const suggest=section("Предложения связей",["Совпадения ключевых слов; подтверждаются вручную."]);for(const n of v.suggestions){const row=document.createElement("div");row.className="disk-suggestion";const p=document.createElement("p");text(p,n.name+" · "+Math.round(n.score*100)+"% совпадений тегов");const bar=document.createElement("progress");bar.max=1;bar.value=n.score;row.append(p,bar,cogButton("Связать",()=>void diskAction("link",{id:file.id,node:n.node_id})));suggest.append(row)}
  if(v.folder_hint)suggest.append(cogButton("Предложенная папка: "+v.folder_hint,()=>{if(window.confirm("Переместить документ?"))void diskAction("move",{id:file.id,folder:v.folder_hint})}));
@@ -1043,9 +1045,9 @@ async function diskAnalytics(){const req=++diskAnalyticsReq;try{const v=await js
  const p=document.createElement("p");text(p,"Редакций: "+v.versions+" · ожидают: "+(v.jobs.queued??0)+" · ошибок: "+(v.jobs.failed??0));panel.append(p);for(const x of v.events){const p=document.createElement("p");text(p,x.at.slice(0,19)+" · #"+x.document_id+" · "+x.kind);panel.append(p)}
  }catch(err){if(req===diskAnalyticsReq)text($("disk-dashboard"),String(err))}}
 $("disk-ask-go").onclick=async()=>{const req=++diskAskReq;try{const q=$<HTMLInputElement>("disk-ask").value;const v=await jsonRequest("/api/workspace/ask",{query:q});if(req!==diskAskReq)return;const root=$("disk-sources");root.replaceChildren();for(const x of v.sources){const e=document.createElement("article"),p=document.createElement("p"),b=document.createElement("strong");text(b,"Источник #"+x.id+" · "+x.name);text(p,x.excerpt);e.append(b,p,cogButton("Открыть источник",()=>void diskOpenId(x.id)));root.append(e)}if(!v.sources.length)text(root,"Подходящие фрагменты не найдены")}catch(err){if(req===diskAskReq)text($("disk-sources"),String(err))}};
-async function diskGraphLoad(after:number){const req=++diskGraphReq;try{const v:DiskGraph=await jsonRequest("/api/workspace/graph?"+new URLSearchParams({after:String(after),q:$<HTMLInputElement>("disk-query").value,folder:$<HTMLSelectElement>("disk-folder").value,trash:diskTrash?"1":"0"}));if(req!==diskGraphReq)return;const changed=!diskGraph||diskGraph.nodes.map(n=>n.id).join(",")!==v.nodes.map(n=>n.id).join(",");diskGraph=v;diskGraphAfter=after;if(changed)diskGraphBorn=performance.now();text($("disk-graph-outside"),"Связей за пределами окна: "+v.nodes.reduce((a,n)=>a+n.outside,0)+" (сумма по узлам)");$<HTMLButtonElement>("disk-graph-next").disabled=v.next===null;text($("disk-graph-legend"),v.nodes.length+" из "+v.total+" · реальные связи внутри группы: "+v.edges.length+" · красный контур — нет связей · пунктир — редакции");diskGraphDraw();if(!diskGraphAnimation){diskGraphAnimation=true;requestAnimationFrame(diskGraphTick)}}catch(err){if(req===diskGraphReq)text($("disk-graph-legend"),String(err))}}
+async function diskGraphLoad(after:number){const req=++diskGraphReq;try{const v:DiskGraph=await jsonRequest("/api/workspace/graph?"+new URLSearchParams({after:String(after),q:$<HTMLInputElement>("disk-query").value,folder:$<HTMLSelectElement>("disk-folder").value,trash:diskTrash?"1":"0"}));if(req!==diskGraphReq)return;const changed=!diskGraph||diskGraph.nodes.map(n=>n.id).join(",")!==v.nodes.map(n=>n.id).join(",");diskGraph=v;diskGraphAfter=after;if(changed)diskGraphBorn=performance.now();text($("disk-graph-outside"),"Связей за пределами окна: "+v.nodes.reduce((a,n)=>a+n.outside,0)+" (сумма по узлам)");$<HTMLButtonElement>("disk-graph-next").disabled=v.next===null;text($("disk-graph-legend"),v.nodes.length+" из "+v.total+" · реальные связи внутри группы: "+v.edges.length+" · тематических групп: "+new Set(v.nodes.map(n=>n.cluster).filter(x=>x)).size+" · группировка по ключевым словам / кешу названий, не новые связи · пунктир — редакции");diskGraphDraw();if(!diskGraphAnimation){diskGraphAnimation=true;requestAnimationFrame(diskGraphTick)}}catch(err){if(req===diskGraphReq)text($("disk-graph-legend"),String(err))}}
 function diskGraphTick(){if(!document.body.classList.contains("disk-open")||diskMode!=="graph"||reduced||performance.now()-diskGraphBorn>800){diskGraphAnimation=false;diskGraphDraw();return}diskGraphDraw();requestAnimationFrame(diskGraphTick)}
-function diskGraphDraw(){const cv=$<HTMLCanvasElement>("disk-graph"),ctx=cv.getContext("2d");if(!ctx||!diskGraph||$("disk-graph-pane").hidden)return;const w=cv.width,h=cv.height;ctx.clearRect(0,0,w,h);const g=diskGraph;diskGraphPos=new Map();const sorted=[...g.nodes].sort((a,b)=>a.folder.localeCompare(b.folder)||a.id-b.id);const n=sorted.length;const spacing=Math.min(19,(Math.min(w,h)/2-20)/Math.sqrt(Math.max(1,n-1)))*diskZoom;const t=reduced?1:Math.min(1,Math.max(.8,(performance.now()-diskGraphBorn)/500));for(let i=0;i<n;i++){const r=spacing*Math.sqrt(i),angle=i*2.399963;const node=sorted[i];diskGraphPos.set(node.node_id,{x:w/2+diskPan.x+Math.cos(angle)*r*t,y:h/2+diskPan.y+Math.sin(angle)*r*t,r:Math.min(7,2.5+Math.log2(node.degree+1),spacing*.37)*Math.min(t,1)})}
+function diskGraphDraw(){const cv=$<HTMLCanvasElement>("disk-graph"),ctx=cv.getContext("2d");if(!ctx||!diskGraph||$("disk-graph-pane").hidden)return;const w=cv.width,h=cv.height;ctx.clearRect(0,0,w,h);const g=diskGraph;diskGraphPos=new Map();const sorted=[...g.nodes].sort((a,b)=>(a.cluster??0)-(b.cluster??0)||a.folder.localeCompare(b.folder)||a.id-b.id);const n=sorted.length;const t=reduced?1:Math.min(1,Math.max(.8,(performance.now()-diskGraphBorn)/500));const groups=new Map<number,DiskGraphNode[]>();for(const node of sorted){const k=node.cluster??0;const group=groups.get(k)??[];group.push(node);groups.set(k,group)}const cols=Math.max(1,Math.ceil(Math.sqrt(groups.size*w/Math.max(1,h)))),rows=Math.max(1,Math.ceil(groups.size/cols));const cw=w/cols,ch=h/rows;let groupIndex=0;for(const group of groups.values()){const cx=w/2+diskPan.x+((groupIndex%cols+.5)*cw-w/2)*diskZoom,cy=h/2+diskPan.y+((Math.floor(groupIndex/cols)+.5)*ch-h/2)*diskZoom;const spacing=Math.min(20,Math.max(2,(Math.min(cw,ch)/2-12)/Math.sqrt(Math.max(1,group.length-1))))*diskZoom;for(let i=0;i<group.length;i++){const r=spacing*Math.sqrt(i),angle=i*2.399963,node=group[i];diskGraphPos.set(node.node_id,{x:cx+Math.cos(angle)*r*t,y:cy+Math.sin(angle)*r*t,r:Math.max(1,Math.min(7,2.5+Math.log2(node.degree+1),spacing*.37))*t})}if(groups.size<=12&&group[0].cluster_label){ctx.fillStyle="#c9b58c";ctx.font="10px sans-serif";ctx.textAlign="center";ctx.fillText(group[0].cluster_label.slice(0,32),cx,cy-Math.min(ch*.42*diskZoom,spacing*Math.sqrt(group.length)+8));ctx.textAlign="start"}groupIndex++}
  ctx.strokeStyle="#9e845044";for(let r=50;r<Math.min(w,h)/2;r+=50){ctx.beginPath();ctx.arc(w/2,h/2,r*diskZoom,0,Math.PI*2);ctx.stroke()}
  for(const edge of g.edges){const a=diskGraphPos.get(edge.source),b=diskGraphPos.get(edge.target);if(!a||!b)continue;ctx.strokeStyle="#d8b77c80";ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke()}
  const byId=new Map(g.nodes.map(n=>[n.id,n.node_id]));ctx.setLineDash([4,4]);for(const edge of g.versions){const a=diskGraphPos.get(byId.get(edge.parent)??0),b=diskGraphPos.get(byId.get(edge.child)??0);if(a&&b){ctx.strokeStyle="#9eacd9";ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke()}}ctx.setLineDash([]);
@@ -1061,6 +1063,65 @@ $("disk-graph").addEventListener("pointerdown",e=>{diskMoved=false;diskDrag={x:e
 $("disk-graph").addEventListener("pointermove",e=>{if(!diskDrag)return;const cv=$<HTMLCanvasElement>("disk-graph"),r=cv.getBoundingClientRect();const dx=e.clientX-diskDrag.x,dy=e.clientY-diskDrag.y;if(Math.hypot(dx,dy)>4)diskMoved=true;if(diskMoved){diskPan={x:diskDrag.px+dx*cv.width/Math.max(1,r.width),y:diskDrag.py+dy*cv.height/Math.max(1,r.height)};diskGraphDraw()}});
 $("disk-graph").addEventListener("pointerup",()=>{diskDrag=null});$("disk-graph").addEventListener("pointercancel",()=>{diskDrag=null;diskMoved=true});
 setInterval(()=>{if(!document.body.classList.contains("disk-open")||document.visibilityState==="hidden"||diskBusy||diskPollBusy)return;diskPollBusy=true;void (async()=>{try{const v=await jsonRequest("/api/workspace/revision");if(!document.body.classList.contains("disk-open")||v.revision===diskRevision)return;diskRevision=v.revision;const selected=diskSelected;await diskAnalytics();await diskLoad(diskAfter);if(diskMode==="graph")await diskGraphLoad(diskGraphAfter);if(selected&&diskSelected?.id===selected.id){const fresh=await jsonRequest("/api/documents/by-node?id="+selected.node_id);if(fresh.file&&diskSelected?.id===selected.id){if(fresh.file.extract_status!==selected.extract_status||fresh.file.folder!==selected.folder)void diskSelect(fresh.file);else void diskInsights(fresh.file,diskDetailReq)}else if(!selected.deleted)diskClear()}}catch(err){text($("disk-message"),String(err))}finally{diskPollBusy=false}})()},3000);
+
+let diskMiniObserver:IntersectionObserver|null=null;
+let diskMiniQueue:{el:HTMLElement;file:DiskFile}[]=[];
+let diskMiniActive=0;
+const diskMiniPending=new WeakMap<Element,DiskFile>();
+function diskMiniObserve(el:HTMLElement,file:DiskFile){
+ diskMiniPending.set(el,file);
+ if(!diskMiniObserver&&typeof IntersectionObserver!=="undefined")diskMiniObserver=new IntersectionObserver(entries=>{for(const e of entries){if(!e.isIntersecting)continue;diskMiniObserver?.unobserve(e.target);const f=diskMiniPending.get(e.target);if(f&&e.target instanceof HTMLElement){diskMiniQueue.push({el:e.target,file:f});diskMiniPump()}}},{rootMargin:"80px"});
+ if(diskMiniObserver)diskMiniObserver.observe(el);else{diskMiniQueue.push({el,file});diskMiniPump()}
+}
+function diskMiniPump(){
+ while(diskMiniActive<2&&diskMiniQueue.length){
+  const item=diskMiniQueue.shift()!;if(!item.el.isConnected)continue;
+  diskMiniActive++;void diskMiniRender(item.el,item.file).catch(()=>{if(item.el.isConnected)text(item.el,"Предпросмотр недоступен")}).finally(()=>{diskMiniActive--;diskMiniPump()});
+ }
+}
+async function diskMiniRender(el:HTMLElement,file:DiskFile){
+ const ext=diskExt(file.name);
+ if(/^(png|jpe?g|gif|webp|pdf)$/.test(ext)){
+  if(ext==="pdf"){
+   text(el,"PDF · миниатюра Windows");
+   const load=()=>{if(el.dataset.loading)return;el.dataset.loading="1";diskMiniQueue.push({el,file});diskMiniPump()};
+   if(!el.dataset.loading){el.parentElement?.addEventListener("mouseenter",load,{once:true});el.parentElement?.addEventListener("focus",load,{once:true});return}
+   await diskMiniImage(el,file,true);return;
+  }
+  await diskMiniImage(el,file,false);return;
+ }
+ if(file.extract_status==="indexed"){
+  const v=await jsonRequest("/api/documents/snippet?id="+file.id);
+  if(el.isConnected){const pre=document.createElement("pre");text(pre,v.text||"Нет текста");el.replaceChildren(pre)}
+ }else text(el,ext.toUpperCase()+" · нет текстового индекса");
+}
+async function diskMiniImage(el:HTMLElement,file:DiskFile,pdf:boolean){
+ const img=new Image();img.alt=file.name;
+ await new Promise<void>((resolve,reject)=>{img.onload=()=>resolve();img.onerror=()=>reject(Error("Preview unavailable"));img.src=(pdf?"/api/documents/thumbnail?id=":"/api/documents/image?id=")+file.id});
+ if(!el.isConnected)return;
+ const cv=document.createElement("canvas");cv.width=240;cv.height=140;cv.setAttribute("aria-label",file.name);
+ const ctx=cv.getContext("2d");if(!ctx||!img.naturalWidth||!img.naturalHeight)return;
+ const scale=Math.min(cv.width/img.naturalWidth,cv.height/img.naturalHeight);const w=img.naturalWidth*scale,h=img.naturalHeight*scale;ctx.drawImage(img,(cv.width-w)/2,(cv.height-h)/2,w,h);el.replaceChildren(cv);
+}
+async function diskRunOcr(file:DiskFile){
+ if(diskBusy||!window.confirm("Локальное OCR Windows: для PDF до 10 первых страниц. Результат требует проверки."))return;
+ diskBusy=true;
+ try{const v=await jsonRequest("/api/workspace/ocr",{id:file.id});text($("disk-message"),(v.indexed?"OCR сохранено":"Текст не распознан")+" · страниц "+v.pages+" из "+v.total+(v.truncated?" · текст ограничен":""));await diskLoad(diskAfter);if(diskSelected?.id===file.id){const fresh=await jsonRequest("/api/documents/by-node?id="+file.node_id);if(fresh.file)void diskSelect(fresh.file)}void diskAnalytics();if(diskMode==="graph")void diskGraphLoad(diskGraphAfter)}
+ catch(err){text($("disk-message"),String(err))}finally{diskBusy=false}
+}
+async function diskShowHistory(file:DiskFile,req:number,root:HTMLElement){
+ try{const v=await jsonRequest("/api/workspace/history?id="+file.id);if(req!==diskDetailReq||!root.isConnected)return;const rows=document.createElement("div");for(const event of v.events){const p=document.createElement("p");text(p,event.at+" · "+event.kind);rows.append(p)}for(const source of v.sources){const p=document.createElement("p");text(p,(source.title||"Источник без названия")+" · "+(source.state||"состояние не записано")+" · "+(source.node_id?"узел #"+source.node_id:"без узла"));rows.append(p)}if(!rows.childElementCount)text(rows,"Нет записанной истории");root.querySelector(".disk-history-rows")?.remove();rows.className="disk-history-rows";root.append(rows)}
+ catch(err){if(req===diskDetailReq)text($("disk-message"),String(err))}
+}
+$("disk-repair").onclick=()=>void diskRepair(false);
+$("disk-rebuild-sources").onclick=()=>void diskRepair(true);
+async function diskRepair(sources:boolean){
+ if(diskBusy||!window.confirm(sources?"Восстановить только явно записанное происхождение?":"Восстановить повреждённые оригиналы из проверенных архивов? SQLite не заменяется."))return;
+ diskBusy=true;
+ try{const v=await jsonRequest(sources?"/api/workspace/rebuild-sources":"/api/workspace/repair",{confirm:true});text($("disk-message"),sources?"Добавлено источников: "+v.added+" · разрешено: "+v.resolved+" · связей: "+v.links+" · без узла: "+v.unresolved:"Восстановлено: "+v.repaired.length+" · не найдено: "+v.unresolved.length+" · карантин: "+v.quarantine.length);await diskLoad(diskAfter);void diskAnalytics();if(diskMode==="graph")void diskGraphLoad(diskGraphAfter);if(diskSelected&&!diskSelected.deleted)void diskSelect(diskSelected)}
+ catch(err){text($("disk-message"),String(err))}finally{diskBusy=false}
+}
+
 diskSetMode("tiles");
 
 $("disk-backup").onclick=async()=>{if(diskBusy||!window.confirm("Создать локальный архив SQLite и всех оригиналов, включая корзину?"))return;diskBusy=true;try{const v=await jsonRequest("/api/workspace/backup",{confirm:true});text($("disk-message"),"Архив data/backups/"+v.name+" · "+v.files+" файлов · "+diskSize(v.bytes))}catch(err){text($("disk-message"),String(err))}finally{diskBusy=false}};

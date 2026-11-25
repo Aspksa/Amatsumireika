@@ -99,7 +99,8 @@ def graph(path,after=0,query="",where="",trash=False):
                     if b in ids:outside[b]+=1
             keys=[r["id"] for r in rows];marks=",".join("?" for _ in keys)
             versions=[dict(r) for r in db.execute("SELECT child,parent FROM document_versions WHERE child IN ("+marks+") AND parent IN ("+marks+")",keys+keys)]
-        return {"nodes":[{**dict(r),"degree":degrees[r["node_id"]],"outside":outside[r["node_id"]]} for r in rows],"edges":links,"versions":versions,"next":rows[-1]["id"] if more else None,"total":db.execute("SELECT COUNT(*) FROM documents WHERE "+criteria,args).fetchone()[0],"revision":db.execute("SELECT version FROM atlas_revision WHERE id=1").fetchone()[0]}
+        grouping=clusters(db,rows) if not trash else {}
+        return {"nodes":[{**dict(r),"degree":degrees[r["node_id"]],"outside":outside[r["node_id"]],**grouping.get(r["id"],{})} for r in rows],"edges":links,"versions":versions,"next":rows[-1]["id"] if more else None,"total":db.execute("SELECT COUNT(*) FROM documents WHERE "+criteria,args).fetchone()[0],"revision":db.execute("SELECT version FROM atlas_revision WHERE id=1").fetchone()[0]}
 def details(path,ident):
     with closing(doc.connect(path)) as db:
         db.execute("BEGIN")
@@ -225,3 +226,65 @@ def quality(path):
         for row in db.execute("SELECT s.node_id,d.node_id FROM document_sources s JOIN documents d ON d.id=s.document_id WHERE s.node_id IS NOT NULL AND s.node_id<>d.node_id"):
             if not db.execute("SELECT 1 FROM edges WHERE source=? AND target=?",tuple(sorted(row))).fetchone():missing_edges.append(list(row))
         return {"foreign_keys":sum(1 for _ in db.execute("PRAGMA foreign_key_check")),"index_mismatch":wrong_index,"metadata_mismatch":wrong_metadata,"source_edges_missing":missing_edges}
+
+
+def clusters(db,rows):
+    """Bounded groups for the current graph page; cached embeddings only."""
+    if not rows:return {}
+    ids=[r["id"] for r in rows]
+    marks=",".join("?" for _ in ids)
+    texts={r["id"]:r["content"] for r in db.execute("SELECT id,CASE WHEN extract_status='indexed' THEN substr(content,1,12000) ELSE '' END content FROM documents WHERE id IN ("+marks+")",ids)}
+    vectors={}
+    if memory.table(db,"embedding_cache"):
+        import gateway
+        for r in rows:
+            # Existing cache uses exact node titles; never request fresh embeddings.
+            hit=db.execute("SELECT vector FROM embedding_cache WHERE model=? AND digest=?",(gateway.EMBED_MODEL,memory.digest(r["name"]))).fetchone()
+            if hit:
+                try:
+                    v=memory.vector(json.loads(hit[0]))
+                    if len(v)<=2048:vectors[r["id"]]=v
+                except (ValueError,TypeError):pass
+    reps=[];groups={}
+    for r in rows:
+        ident=r["id"]
+        keys=set(tags(texts[ident])) if texts[ident] else set()
+        vec=vectors.get(ident)
+        best=None;best_score=0
+        for rep,other,other_vec,label in reps:
+            lexical=len(keys&other)/max(1,len(keys|other)) if len(keys&other)>=2 else 0
+            semantic=memory.cosine(vec,other_vec) if vec and other_vec and len(vec)==len(other_vec) else 0
+            score=max(lexical if lexical>=.25 else 0,semantic if semantic>=.84 else 0)
+            if score>best_score:best=(rep,label,"cached_title_embedding" if semantic>=.84 and semantic>=lexical else "keywords");best_score=score
+        if best:
+            groups[ident]={"cluster":best[0],"cluster_label":best[1],"cluster_method":best[2]}
+        elif len(reps)<32 and (keys or vec):
+            label=" / ".join(tags(texts[ident])[:3]) or r["name"]
+            reps.append((ident,keys,vec,label))
+            groups[ident]={"cluster":ident,"cluster_label":label,"cluster_method":"representative"}
+        else:
+            groups[ident]={"cluster":0,"cluster_label":"Без группы","cluster_method":"none"}
+    return groups
+
+def history(path,ident):
+    with closing(doc.connect(path)) as db:
+        db.execute("BEGIN")
+        r=doc.get(db,ident,False)
+        events=[dict(x) for x in db.execute("""SELECT at,kind FROM (SELECT id,at,kind FROM document_event_archive WHERE document_id=? UNION SELECT id,at,kind FROM document_events WHERE document_id=?) ORDER BY id DESC LIMIT 200""",(ident,ident))]
+        sources=[dict(x) for x in db.execute("""SELECT s.fingerprint,s.node_id,c.state,c.at candidate_at,m.at memory_at,COALESCE(n.title,c.title,'') title FROM document_sources s LEFT JOIN cog_candidates c ON c.fingerprint=s.fingerprint LEFT JOIN cog_memory m ON m.node_id=s.node_id LEFT JOIN nodes n ON n.id=s.node_id WHERE s.document_id=? ORDER BY s.fingerprint LIMIT 200""",(ident,))]
+        return {"id":ident,"events":events,"sources":sources,"limit":200,"historical_complete":False}
+
+def rebuild_sources(path):
+    """Rebuild only explicitly recorded document origins; never infer past events."""
+    with closing(doc.connect(path)) as db,db:
+        db.execute("BEGIN IMMEDIATE")
+        before=db.execute("SELECT COUNT(*) FROM document_sources").fetchone()[0]
+        db.execute("INSERT OR IGNORE INTO document_sources SELECT c.fingerprint,d.id,NULL FROM cog_candidates c JOIN documents d ON c.source='document:'||d.id")
+        db.execute("INSERT OR IGNORE INTO document_sources SELECT m.fingerprint,d.id,m.node_id FROM cog_memory m JOIN documents d ON m.source='document:'||d.id WHERE m.node_id<>d.node_id")
+        # A unique fingerprint plus an explicit source is evidence; ambiguous matches stay unresolved.
+        updated=db.execute("""UPDATE document_sources SET node_id=(SELECT MIN(m.node_id) FROM cog_memory m WHERE m.fingerprint=document_sources.fingerprint) WHERE node_id IS NULL AND (SELECT COUNT(*) FROM cog_memory m WHERE m.fingerprint=document_sources.fingerprint)=1 AND EXISTS(SELECT 1 FROM cog_candidates c WHERE c.fingerprint=document_sources.fingerprint AND c.state='approved')""").rowcount
+        links=0
+        for source in db.execute("""SELECT DISTINCT d.node_id,s.node_id FROM document_sources s JOIN documents d ON d.id=s.document_id JOIN nodes n ON n.id=s.node_id WHERE d.deleted IS NULL AND d.extract_status='indexed' AND d.node_id<>s.node_id AND NOT EXISTS(SELECT 1 FROM cog_candidates c WHERE c.fingerprint=s.fingerprint AND c.state='rejected') AND NOT EXISTS(SELECT 1 FROM documents x WHERE x.node_id=s.node_id AND x.deleted IS NOT NULL)""").fetchall():
+            links+=db.execute("INSERT OR IGNORE INTO edges VALUES(?,?)",tuple(sorted(source))).rowcount
+        after=db.execute("SELECT COUNT(*) FROM document_sources").fetchone()[0]
+        return {"added":after-before,"resolved":updated,"links":links,"unresolved":db.execute("SELECT COUNT(*) FROM document_sources WHERE node_id IS NULL").fetchone()[0],"historical_complete":False}
