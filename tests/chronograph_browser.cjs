@@ -51,7 +51,19 @@ async function main(){
   assert.equal(await evaluate('getComputedStyle(document.querySelector(".month-day.is-today"),"::before").borderTopStyle'),"solid");
   assert.ok(await evaluate('document.querySelector(".month-calendar").getBoundingClientRect().top-document.querySelector(".chrono-wheel").getBoundingClientRect().bottom>=23'),"calendar below wheel");
   assert.equal(await evaluate('document.querySelector("#spiral-tooltip").hidden'),true);
-  await evaluate('(()=>{const w=document.querySelector("#year-wheel"),r=w.getBoundingClientRect();w.dispatchEvent(new PointerEvent("pointermove",{clientX:r.left+r.width/2,clientY:r.top+r.height*(260-75)/520,bubbles:true}))})()');
+  // The first annual bar spans more than one day, but each day has its own hit target.
+  const firstDays=await evaluate(`(()=>{
+   const wheel=document.querySelector("#year-wheel"),r=wheel.getBoundingClientRect(),y=new Date().getFullYear();
+   const count=(Date.UTC(y+1,0,1)-Date.UTC(y,0,1))/86400000;
+   return [0,1].map(i=>{
+    const angle=-Math.PI/2-(i+.5)*2*Math.PI/count;
+    wheel.dispatchEvent(new PointerEvent("pointermove",{bubbles:true,
+     clientX:r.left+r.width*(.5+90*Math.cos(angle)/520),clientY:r.top+r.height*(.5+90*Math.sin(angle)/520)}));
+    return document.querySelector("#spiral-tooltip").textContent;
+   });
+  })()`);
+  assert.match(firstDays[0],/\b1 января/);
+  assert.match(firstDays[1],/\b2 января/);
   assert.equal(await evaluate('document.querySelector("#spiral-tooltip").hidden'),false);
   await evaluate('document.querySelector("#year-wheel").dispatchEvent(new PointerEvent("pointerleave"))');
   assert.equal(await evaluate('document.querySelector("#spiral-tooltip").hidden'),true);

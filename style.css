@@ -231,16 +231,17 @@ h2{font:650 var(--type-xs)/1.4 var(--sans);letter-spacing:.08em}
 #left{--chrono-gold:#ffd17a;--chrono-season:var(--chrono-season-dark,#dba253);--chrono-space:clamp(12px,4cqw,20px);--chrono-width: min(100%,510px)}
 :root.paper #left{--chrono-gold:#80550f;--chrono-season:var(--chrono-season-paper,#a35b19)}
 main:not(.expanded) #left{justify-content:flex-start;align-items:stretch;padding-top:clamp(4px,1vh,12px);padding-bottom:12px;gap:0;border:0;background:transparent}
-#left .chrono-wheel{position:relative;width:var(--chrono-width);aspect-ratio:1;flex:none;margin:0 auto;isolation:isolate;overflow:hidden;contain:paint;background:transparent}
+#left .chrono-wheel{position:relative;width:var(--chrono-width);aspect-ratio:1;flex:none;margin:0 auto;isolation:isolate;overflow:hidden;contain:paint;background:radial-gradient(circle closest-side,#362c23 55%,#2b241e 82%,transparent 100%)}
+:root.paper #left .chrono-wheel{background:radial-gradient(circle closest-side,#f6edda 55%,#f1e7d3 82%,transparent 100%)}
 #year-wheel,#time-overlay{position:absolute;inset:0;width:100%;height:100%;display:block}
 #year-wheel{z-index:0;cursor:pointer}#time-overlay{z-index:1;pointer-events:none}
 #left .chrono-clock{position:absolute;z-index:2;left:50%;top:50%;width:44%;transform:translate(-50%,-50%);text-align:center;pointer-events:none}
-#left[data-time-detail="year"] .chrono-clock{width:26.15%}
-#left .chrono-clock #clock{display:flex;align-items:baseline;justify-content:center;white-space:nowrap;font:400 clamp(14px,9cqw,38px)/1 Manrope,Inter,"Segoe UI",sans-serif;letter-spacing:-.04em;color:#fff0ca;font-variant-numeric:tabular-nums lining-nums}
-#left[data-time-detail="year"] .chrono-clock #clock{font-size:clamp(12px,7.3cqw,34px)}
+#left[data-time-detail="year"] .chrono-clock{width:30%}
+#left .chrono-clock #clock{display:flex;align-items:baseline;justify-content:center;white-space:nowrap;font:700 clamp(14px,9cqw,38px)/1 Manrope,Inter,"Segoe UI",sans-serif;letter-spacing:-.04em;color:#fff1d9;font-variant-numeric:tabular-nums lining-nums}
+#left[data-time-detail="year"] .chrono-clock #clock{font-size:clamp(12px,7.7cqw,36px)}
 :root.paper #left .chrono-clock #clock{color:#80550f}
 #clock .cinema-digit,#clock .cinema-colon{display:inline-block;text-align:center;position:relative;white-space:pre;min-width:.57em}
-#clock .cinema-colon{min-width:.27em}#clock .clock-seconds{font-size:.66em;opacity:.8}
+#clock .cinema-colon{min-width:.27em}#clock .clock-seconds{font-size:.64em;opacity:.78}
 #clock .cinema-digit::after{display:none!important;content:none!important}
 #spiral-tooltip{position:absolute;bottom:3px;left:50%;transform:translateX(-50%);z-index:4;pointer-events:none;max-width:95%;width:max-content;text-align:center;background:var(--surface);color:var(--ink);padding:5px 9px;border-radius:6px;font:500 11px/1.4 var(--sans)}
 #spiral-tooltip[hidden]{display:none}
