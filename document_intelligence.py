@@ -39,7 +39,7 @@ def init(db):
 
 def split_text(text):
     """Exact character ranges in extracted text, not invented physical page numbers."""
-    breaks=[m.start() for m in re.finditer("\n",text)]
+    breaks=[m.end()-1 for m in re.finditer(r"\r\n|[\n\r\v\f\x1c-\x1e\x85\u2028\u2029]",text)]
     blocks=[];start=None;end=0;section="";block_section=""
     def emit(a,b,heading):
         while a<b and text[a].isspace():a+=1
@@ -55,7 +55,10 @@ def split_text(text):
             while a<b and text[a].isspace():a+=1
     offset=0
     for raw in text.splitlines(keepends=True):
-        line=raw.rstrip("\r\n");line_end=offset+len(line)
+        if len(blocks)>2000:
+            # Pathological tiny paragraphs: preserve full text with bounded windows.
+            blocks.clear();emit(0,len(text),"");return blocks
+        line=raw.rstrip("\r\n\v\f\x1c\x1d\x1e\x85\u2028\u2029");line_end=offset+len(line)
         heading=bool(HEADING.match(line))
         if not line.strip() or heading or (start is not None and line_end-start>MAX_FRAGMENT):
             if start is not None:emit(start,end,block_section);start=None
@@ -71,7 +74,7 @@ def split_text(text):
 def lines(text):
     offset=0
     for number,raw in enumerate(text.splitlines(keepends=True),1):
-        line=raw.rstrip("\r\n")
+        line=raw.rstrip("\r\n\v\f\x1c\x1d\x1e\x85\u2028\u2029")
         yield number,offset,line
         offset+=len(raw)
 
@@ -241,8 +244,10 @@ def compare(path,child,parent=None):
         # Keep worst-case diff cost bounded; explicitly label any partial coverage.
         cap=2000;a,b=left[:cap],right[:cap]
         changes=[];counts={"added":0,"removed":0,"replaced_before":0,"replaced_after":0}
+        change_count=0
         for op,i,j,k,l in difflib.SequenceMatcher(None,a,b,autojunk=True).get_opcodes():
             if op=="equal":continue
+            change_count+=1
             if op=="insert":counts["added"]+=l-k
             elif op=="delete":counts["removed"]+=j-i
             else:counts["replaced_before"]+=j-i;counts["replaced_after"]+=l-k
@@ -253,4 +258,4 @@ def compare(path,child,parent=None):
             return out
         before,after=values(old["content"]),values(new["content"])
         facts=[{"subject":s,"before":sorted(before[s]),"after":sorted(after[s])} for s in sorted(before.keys()|after.keys()) if before[s]!=after[s]]
-        return {"child":child,"parent":parent,"confirmed_version":bool(db.execute("SELECT 1 FROM document_versions WHERE child=? AND parent=?",(child,parent)).fetchone()),"counts":counts,"changes":changes,"claim_changes":facts[:100],"partial":len(left)>cap or len(right)>cap or len(old["content"])>=doc.MAX_TEXT or len(new["content"])>=doc.MAX_TEXT,"scope":"extracted text, not original document layout; claims require review"}
+        return {"child":child,"parent":parent,"confirmed_version":bool(db.execute("SELECT 1 FROM document_versions WHERE child=? AND parent=?",(child,parent)).fetchone()),"counts":counts,"changes":changes,"claim_changes":facts[:100],"omitted_changes":max(0,change_count-50),"omitted_claim_changes":max(0,len(facts)-100),"partial":len(left)>cap or len(right)>cap or len(old["content"])>=doc.MAX_TEXT or len(new["content"])>=doc.MAX_TEXT,"scope":"extracted text, not original document layout; claims require review"}
