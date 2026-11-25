@@ -1,3 +1,4 @@
+export {};
 type NodeRecord={id:number;title:string;category:string};
 type Edge={source:number;target:number};
 type Snapshot={nodes:NodeRecord[];edges:Edge[];categories:string[]};
@@ -60,7 +61,7 @@ function resize(){const box=stage.getBoundingClientRect();width=Math.max(1,box.w
 new ResizeObserver(resize).observe(stage);resize();
 function scale(){return fit*zoom}
 function world(p:Point):Point{return{x:(p.x-width/2-pan.x)/scale(),y:(p.y-height/2-pan.y)/scale()}}
-function screen(p:Point):Point{return{x:width/2+pan.x+p.x*scale(),y:height/2+pan.y+p.y*scale()}}
+function worldToScreen(p:Point):Point{return{x:width/2+pan.x+p.x*scale(),y:height/2+pan.y+p.y*scale()}}
 function circle(x:number,y:number,r:number,stroke:string,fill?:string){ctx.beginPath();ctx.arc(x,y,r,0,tau);if(fill){ctx.fillStyle=fill;ctx.fill()}ctx.strokeStyle=stroke;ctx.stroke()}
 function line(a:Point,b:Point,c:string){ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.strokeStyle=c;ctx.stroke()}
 function polygon(p:Point,r:number,c:string){ctx.beginPath();for(let j=0;j<6;j++){const v=polar(Math.PI/6+j*tau/6,r);if(j===0)ctx.moveTo(p.x+v.x,p.y+v.y);else ctx.lineTo(p.x+v.x,p.y+v.y)}ctx.closePath();ctx.fillStyle=c+"0b";ctx.fill();ctx.strokeStyle=c+"55";ctx.stroke()}
@@ -104,7 +105,7 @@ function frame(now:number){
 }
 requestAnimationFrame(frame);
 function local(e:PointerEvent|WheelEvent|MouseEvent):Point{const r=canvas.getBoundingClientRect();return{x:e.clientX-r.left,y:e.clientY-r.top}}
-function hit(p:Point):number|null{let best:number|null=null,min=12*12;for(const n of visible){if(filter&&n.category!==filter)continue;const q=screen(positions.get(n.id)!);const d=(q.x-p.x)**2+(q.y-p.y)**2;if(d<min){min=d;best=n.id}}return best}
+function hit(p:Point):number|null{let best:number|null=null,min=12*12;for(const n of visible){if(filter&&n.category!==filter)continue;const q=worldToScreen(positions.get(n.id)!);const d=(q.x-p.x)**2+(q.y-p.y)**2;if(d<min){min=d;best=n.id}}return best}
 function tooltip(id:number|null,p:Point){const t=$("tooltip");const n=id===null?undefined:nodeMap.get(id);t.hidden=!n;if(n){text(t,n.title+"\n"+n.category+" · связей: "+(neighbor.get(n.id)?.size??0));t.style.left=Math.max(4,Math.min(width-194,p.x+14))+"px";t.style.top=Math.max(4,Math.min(height-75,p.y+12))+"px"}}
 function choose(id:number|null){selected=id;rebuild();refreshDetails()}
 canvas.addEventListener("pointerdown",e=>{if(e.button!==0)return;drag=local(e);dragOrigin=drag;moved=false;canvas.setPointerCapture(e.pointerId)});
