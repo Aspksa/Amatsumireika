@@ -24,19 +24,27 @@ def initialize():
         CREATE TABLE IF NOT EXISTS nodes(id INTEGER PRIMARY KEY, title TEXT NOT NULL, category TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS edges(source INTEGER REFERENCES nodes(id), target INTEGER REFERENCES nodes(id), PRIMARY KEY(source,target), CHECK(source<target));
         """)
+        columns = {r[1] for r in db.execute("PRAGMA table_info(nodes)")}
+        if "folder" not in columns:
+            db.execute("ALTER TABLE nodes ADD COLUMN folder TEXT NOT NULL DEFAULT ''")
 
 def snapshot():
     with closing(connect()) as db:
         db.execute("BEGIN")
-        return {"nodes":[dict(id=i,title=t,category=c) for i,t,c in db.execute("SELECT id,title,category FROM nodes ORDER BY id")],
+        return {"nodes":[dict(id=i,title=t,category=c,folder=f) for i,t,c,f in db.execute("SELECT id,title,category,folder FROM nodes ORDER BY id")],
                 "edges":[dict(source=s,target=t) for s,t in db.execute("SELECT source,target FROM edges ORDER BY source,target")],
                 "categories":CATEGORIES}
 
-def add_node(title, category):
+def add_node(title, category, folder=""):
     if not isinstance(title,str) or not title.strip() or len(title.strip())>160 or category not in CATEGORIES:
         raise ValueError("Invalid title or category")
+    if not isinstance(folder,str) or len(folder)>120 or any(ord(c)<32 for c in folder):
+        raise ValueError("Invalid folder")
+    folder = "/".join(p.strip() for p in folder.replace("\\","/").split("/") if p.strip())
+    if any(p in (".","..") for p in folder.split("/")):
+        raise ValueError("Invalid folder path")
     with closing(connect()) as db, db:
-        return db.execute("INSERT INTO nodes(title,category) VALUES(?,?)",(title.strip(),category)).lastrowid
+        return db.execute("INSERT INTO nodes(title,category,folder) VALUES(?,?,?)",(title.strip(),category,folder)).lastrowid
 
 def add_edge(source,target):
     if type(source) is not int or type(target) is not int or source<=0 or target<=0 or source==target:
@@ -83,7 +91,7 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(data,dict):
                 raise ValueError("Expected object")
             if self.path=="/api/nodes":
-                add_node(data.get("title"),data.get("category"))
+                add_node(data.get("title"),data.get("category"),data.get("folder",""))
             elif self.path=="/api/edges":
                 add_edge(data.get("source"),data.get("target"))
             else:
