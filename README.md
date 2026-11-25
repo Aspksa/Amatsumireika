@@ -76,3 +76,6 @@ The yearly fan now extends to 132 logical units with a 68-unit center and 480-un
 
 ### Imperial Minimalism
 Time composition redesign inspired by the supplied radial bar-chart reference: long fine rays, daily continuous growth, subtle month separators, single clock ring, restrained seasonal palette, stable Manrope/Inter typography and quiet local motion. Consolidated the accumulated clock/calendar CSS overrides into one scoped section, preserving other modules and local fonts. Calendar keeps today and selection independent, reserves a consistent grid area and supports arrow-key navigation and horizontal touch swipes. Existing annual hit tests, full month names, month detail and local data remain. Visual acceptance on the user's monitor remains manual.
+
+### Startup reliability and favicon
+Start.bat uses Python 3.10+, UTF-8, a named console and a standard-library launcher. It serializes build/start with an OS-released lock, checks frontend SHA-256, logs to data/startup.log (rotating), reopens a healthy existing instance and preserves SQLite. Node is required only for rebuilding. Start.bat --check / python launcher.py --check verify build and DB without opening the browser. Local health endpoint, Host validation, JSON errors and SVG favicon. Direct server.py remains a developer entry point.
