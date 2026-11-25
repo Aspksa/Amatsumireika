@@ -98,6 +98,19 @@ class AtlasTest(unittest.TestCase):
             self.assertEqual(len(server.refresh_calendars()["calendars"]),1)
         server.initialize()
         self.assertEqual(len(server.get_calendars()["calendars"]),1)
+        bundled=server.load_bundled_calendars()
+        self.assertEqual([r["year"] for r in bundled["calendars"]],[2026,2027])
+        import json
+        from io import BytesIO
+        class FeedResponse(BytesIO):
+            def geturl(self):
+                return server.CALENDAR_FEED
+        raw=(server.ROOT / "calendar" / "production-calendar.json").read_bytes()
+        with patch.object(server,"urlopen",return_value=FeedResponse(raw)):
+            self.assertEqual(len(server.refresh_calendars()["calendars"]),2)
+        with patch.object(server,"urlopen",return_value=FeedResponse(b'{"schema":2}')):
+            self.assertIn("не принято",server.refresh_calendars()["status"])
+        self.assertEqual(len(server.get_calendars()["calendars"]),2)
 
     def test_invalid(self):
         with self.assertRaises(ValueError):
