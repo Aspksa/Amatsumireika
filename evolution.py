@@ -9,7 +9,7 @@ import memory_engine as memory
 MODEL="Qwen/Qwen3-Embedding-0.6B"
 def now(): return datetime.now(timezone.utc).isoformat()
 def init(db):
-    if memory.table(db,"evo_versions"): return
+    if memory.table(db,"evo_versions") and memory.table(db,"evo_journal_archive"): return
     db.executescript("""
     CREATE TABLE IF NOT EXISTS evo_versions(id INTEGER PRIMARY KEY,node_id INTEGER NOT NULL REFERENCES nodes(id),at TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN ('current','historical','unverified')),note TEXT NOT NULL);
     CREATE INDEX IF NOT EXISTS evo_versions_node ON evo_versions(node_id,id);
@@ -17,6 +17,8 @@ def init(db):
     CREATE TABLE IF NOT EXISTS evo_digest(id INTEGER PRIMARY KEY,at TEXT NOT NULL,title TEXT NOT NULL,source_ids TEXT NOT NULL UNIQUE);
     CREATE TABLE IF NOT EXISTS evo_journal(id INTEGER PRIMARY KEY,at TEXT NOT NULL,kind TEXT NOT NULL,detail TEXT NOT NULL);
     CREATE INDEX IF NOT EXISTS evo_journal_kind ON evo_journal(kind,id);
+    CREATE TABLE IF NOT EXISTS evo_journal_archive(id INTEGER PRIMARY KEY,at TEXT NOT NULL,kind TEXT NOT NULL,detail TEXT NOT NULL);
+    CREATE INDEX IF NOT EXISTS cog_alias_canonical ON cog_aliases(canonical_id);
     CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target);
     """)
 def connect(path):
@@ -27,31 +29,35 @@ def connect(path):
     return db
 def log(db,kind,detail):
     db.execute("INSERT INTO evo_journal(at,kind,detail) VALUES(?,?,?)",(now(),kind,detail))
+    cutoff=db.execute("SELECT MAX(id)-5000 FROM evo_journal").fetchone()[0]
+    if cutoff>0:
+        db.execute("INSERT OR IGNORE INTO evo_journal_archive SELECT * FROM evo_journal WHERE id<=?",(cutoff,))
+        db.execute("DELETE FROM evo_journal WHERE id<=?",(cutoff,))
 def record(db,node):
     row=db.execute("SELECT n.id,n.title,n.category,n.folder,n.created_at,m.kind,m.subject,m.source,m.confidence FROM nodes n LEFT JOIN cog_memory m ON m.node_id=n.id WHERE n.id=?",(node,)).fetchone()
     return dict(row) if row else None
 def neighbors(db,ids,limit=24):
-    seen=set(ids);result=[]
+    seen={memory.canonical(db,i) for i in ids};result=[]
     for ident in ids[:8]:
-        rows=db.execute("SELECT target FROM edges WHERE source=? UNION SELECT source FROM edges WHERE target=? LIMIT 32",(ident,ident))
+        root=memory.canonical(db,ident)
+        rows=db.execute("""WITH members(id) AS (SELECT ? UNION SELECT alias_id FROM cog_aliases WHERE canonical_id=?)
+            SELECT target FROM edges JOIN members ON source=members.id UNION SELECT source FROM edges JOIN members ON target=members.id LIMIT 128""",(root,root))
         for row in rows:
-            target=row[0]
+            target=memory.canonical(db,row[0])
             if target in seen:continue
             seen.add(target)
             item=record(db,target)
-            if item:result.append({**item,"via":ident})
+            if item:result.append({**item,"via":root})
             if len(result)>=limit:return result
     return result
-def current_state(db,node):
-    row=db.execute("SELECT state FROM evo_versions WHERE node_id=? ORDER BY id DESC LIMIT 1",(node,)).fetchone()
-    return row[0] if row else "unverified"
+current_state=memory.current_state
 def freshness(db,node):
     row=db.execute("SELECT checked,days FROM evo_review WHERE node_id=?",(node,)).fetchone()
     if not row:return "unreviewed"
     return "review_due" if datetime.fromisoformat(row[0])+timedelta(days=row[1])<=datetime.now(timezone.utc) else "reviewed"
-def retrieve(db,q):
+def retrieve(db,q,active_only=False):
     # The existing global hybrid engine is the only primary retrieval algorithm.
-    seeds=memory.search(db,q,MODEL,limit=8)
+    seeds=memory.search(db,q,MODEL,limit=8,active_only=active_only)
     for r in seeds:
         r["state"]=current_state(db,r["id"])
         r["freshness"]=freshness(db,r["id"])
@@ -60,8 +66,15 @@ def retrieve(db,q):
     linked=neighbors(db,[r["id"] for r in seeds])
     for r in linked:
         r["state"]=current_state(db,r["id"]);r["freshness"]=freshness(db,r["id"])
-    skills=[r for r in seeds+linked if r["category"] in ("Навыки","Опыт")]
-    return {"seeds":seeds,"linked":linked,"experience":skills[:8],"stages":[{"name":"Гибридный поиск","count":len(seeds)},{"name":"Связанные записи","count":len(linked)},{"name":"Опыт и навыки","count":min(8,len(skills))}],"method":"cached_vectors_and_words; linked records are context, not proof"}
+    if active_only:linked=[r for r in linked if r["state"]!="historical"]
+    skills=[r for r in seeds+linked if r["category"] in ("Навыки","Опыт") and r["state"]!="historical" and r["freshness"]!="review_due"]
+    summaries=[]
+    qterms=memory.terms(q)
+    for row in db.execute("SELECT id,title,source_ids FROM evo_digest ORDER BY id DESC LIMIT 1000"):
+        if qterms & memory.terms(row["title"]):
+            summaries.append(dict(row))
+            if len(summaries)>=5:break
+    return {"seeds":seeds,"linked":linked,"summaries":summaries,"experience":skills[:8],"stages":[{"name":"Гибридный поиск","count":len(seeds)},{"name":"Связанные записи","count":len(linked)},{"name":"Опыт и навыки","count":min(8,len(skills))}],"method":"cached_vectors_and_words; linked records are context, not proof"}
 def explore(path,data):
     q=data.get("query")
     if not isinstance(q,str) or not 1<=len(q.strip())<=300:raise ValueError("Введите запрос до 300 символов")
@@ -79,6 +92,7 @@ def conflict_rows(db,limit=40):
       FROM cog_memory a JOIN cog_memory b ON a.subject=b.subject AND a.node_id<b.node_id
       JOIN nodes n ON n.id=a.node_id JOIN nodes p ON p.id=b.node_id
       WHERE a.subject<>'' AND a.fingerprint<>b.fingerprint
+      AND NOT EXISTS(SELECT 1 FROM cog_aliases x WHERE x.alias_id IN (a.node_id,b.node_id))
       AND COALESCE((SELECT state FROM evo_versions WHERE node_id=a.node_id ORDER BY id DESC LIMIT 1),'unverified')<>'historical'
       AND COALESCE((SELECT state FROM evo_versions WHERE node_id=b.node_id ORDER BY id DESC LIMIT 1),'unverified')<>'historical'
       ORDER BY a.node_id DESC,b.node_id LIMIT ?""",(limit,))
@@ -88,12 +102,16 @@ def fact_state(path,data):
     if type(node) is not int or state not in ("current","historical","unverified") or not isinstance(note,str) or len(note)>160:raise ValueError("Invalid fact revision")
     with closing(connect(path)) as db,db:
         db.execute("BEGIN IMMEDIATE")
+        node=memory.canonical(db,node)
         item=record(db,node)
         if not item:raise ValueError("Unknown record")
-        if state=="current" and item["subject"]:
-            others=db.execute("SELECT node_id FROM cog_memory WHERE subject=? AND node_id<>?",(item["subject"],node)).fetchall()
+        subject=memory.subject(item["title"],"fact") if item["category"]=="Знания" else ""
+        if subject and state=="current":
+            others=db.execute("SELECT n.id,n.title FROM nodes n WHERE n.category='Знания' AND n.id<>? AND EXISTS(SELECT 1 FROM evo_versions v WHERE v.node_id=n.id) ",(node,)).fetchall()
             for other in others:
-                if current_state(db,other[0])=="current":raise ValueError("Mark the previous current fact historical first")
+                if memory.subject(other[1],"fact")==subject and current_state(db,other[0])=="current" and memory.canonical(db,other[0])!=node:raise ValueError("Сначала отметьте прежний актуальный факт как исторический")
+        if subject and item["kind"] is None:
+            db.execute("INSERT OR IGNORE INTO cog_memory(node_id,kind,subject,fingerprint,source,at,confidence,priority) VALUES(?,?,?,?,?,?,?,?)",(node,"fact",subject,memory.digest(memory.norm("fact\0"+item["title"])),"manual",item["created_at"] or now(),.7,2))
         if current_state(db,node)!=state:
             db.execute("INSERT INTO evo_versions(node_id,at,state,note) VALUES(?,?,?,?)",(node,now(),state,note))
             log(db,"fact","Версия записи #%d: %s"%(node,state))
@@ -167,4 +185,13 @@ def quality(path):
                 ids=json.loads(row[0])
                 if not isinstance(ids,list) or not 2<=len(ids)<=12 or any(type(i) is not int for i in ids) or len(set(ids))!=len(ids) or any(not db.execute("SELECT 1 FROM nodes WHERE id=?",(i,)).fetchone() for i in ids):bad_digests+=1
             except (ValueError,TypeError):bad_digests+=1
-        return {"checks":[{"name":"Целостность связей","issues":bad_links},{"name":"Источники версий","issues":bad_versions},{"name":"Источники сводок","issues":bad_digests}],"ok":not (bad_links or bad_versions or bad_digests)}
+        foreign=sum(1 for _ in db.execute("PRAGMA foreign_key_check"))
+        aliases=db.execute("SELECT COUNT(*) FROM cog_aliases a JOIN cog_aliases b ON a.canonical_id=b.alias_id").fetchone()[0]
+        missing_projection=db.execute("SELECT COUNT(*) FROM cog_relations r WHERE r.state='approved' AND r.kind IN ('association','cause') AND NOT EXISTS(SELECT 1 FROM edges e WHERE e.source=MIN(r.source,r.target) AND e.target=MAX(r.source,r.target))").fetchone()[0]
+        checks=[{"name":"Целостность связей","issues":bad_links},{"name":"Источники версий","issues":bad_versions},{"name":"Источники сводок","issues":bad_digests},{"name":"Внешние ключи всех таблиц","issues":foreign},{"name":"Цепочки групп дубликатов","issues":aliases},{"name":"Отсутствующие связи атласа","issues":missing_projection}]
+        return {"checks":checks,"ok":not any(x["issues"] for x in checks)}
+
+def preview(path,q):
+    if not isinstance(q,str) or not 1<=len(q.strip())<=300:raise ValueError("Invalid query")
+    with closing(connect(path)) as db:
+        return retrieve(db,q,active_only=True)

@@ -82,10 +82,7 @@ def inspect_message(db,source,text):
         proposal(db,k,title,source,subject,.85,2)
     elif re.fullmatch(r"(?i)я предпочитаю [^?!\n]{3,120}[.]?",text):
         proposal(db,"preference",text.strip(),source,confidence=.55)
-def subject_of(title,kind):
-    if kind!="fact": return ""
-    m=re.fullmatch(r"([^=:]{1,80})\s*[=:]\s*(\S.+)",title)
-    return norm(m[1]) if m else ""
+subject_of=memory.subject
 def skill(db,name,success):
     db.execute("INSERT INTO cog_skills VALUES(?,1,?,?) ON CONFLICT(name) DO UPDATE SET attempts=attempts+1,successes=successes+excluded.successes,failures=failures+excluded.failures",(name,int(success),int(not success)))
 def cycle(path,force=False):
@@ -176,7 +173,7 @@ def review(path,data):
             if not c or c["state"]!="pending": raise ValueError("Candidate not pending")
             if action=="reject":
                 db.execute("UPDATE cog_candidates SET state='rejected' WHERE id=?",(ident,));emit(db,"review","Кандидат отклонён");return
-            if c["subject"] and db.execute("SELECT 1 FROM cog_memory WHERE subject=? AND fingerprint<>?",(c["subject"],c["fingerprint"])).fetchone():
+            if memory.active_conflict(db,c["subject"],c["fingerprint"]):
                 if data.get("confirm_conflict") is not True: raise ValueError("Есть другое утверждение о том же предмете. Подтвердите сохранение обоих.")
             existing=memory.existing(db,c["title"],TYPES[c["kind"]])
             node=existing[0] if existing else db.execute("INSERT INTO nodes(title,category,folder,created_at) VALUES(?,?,?,?)",(c["title"],TYPES[c["kind"]],"Память",now())).lastrowid
@@ -206,12 +203,13 @@ def relation(path,data):
             elif kind=="duplicate" and action=="approve":
                 rows=db.execute("SELECT id,title,category FROM nodes WHERE id IN (?,?) ORDER BY id",(a,b)).fetchall()
                 if norm(rows[0]["title"])!=norm(rows[1]["title"]) or rows[0]["category"]!=rows[1]["category"]: raise ValueError("Only exact normalized duplicates can be grouped")
-                canonical=db.execute("SELECT canonical_id FROM cog_aliases WHERE alias_id=?",(a,)).fetchone()
-                canonical=canonical[0] if canonical else a
-                db.execute("UPDATE cog_aliases SET canonical_id=? WHERE canonical_id=?",(canonical,b))
-                db.execute("INSERT INTO cog_aliases VALUES(?,?) ON CONFLICT(alias_id) DO UPDATE SET canonical_id=excluded.canonical_id",(b,canonical))
+                canonical,other=sorted((memory.canonical(db,a),memory.canonical(db,b)))
+                if canonical!=other:
+                    db.execute("UPDATE cog_aliases SET canonical_id=? WHERE canonical_id=?",(canonical,other))
+                    db.execute("INSERT INTO cog_aliases VALUES(?,?) ON CONFLICT(alias_id) DO UPDATE SET canonical_id=excluded.canonical_id",(other,canonical))
                 emit(db,"review","Дубликат объединён в поиске; исходные записи и связи сохранены",canonical)
-            elif kind=="duplicate" and action=="reject": db.execute("DELETE FROM cog_aliases WHERE alias_id=?",(b,))
+            elif kind=="duplicate" and action=="reject":
+                if memory.canonical(db,a)==memory.canonical(db,b): raise ValueError("Подтверждённая группа сохраняется; разъединение требует отдельной операции")
 def configure(path,data):
     if set(data)-{"enabled","style"}: raise ValueError("Unknown option")
     with closing(connect(path)) as db:
@@ -238,6 +236,7 @@ def lookup(path,q,record=False):
     with closing(connect(path)) as db:
         init(db)
         results=memory.search(db,q,"Qwen/Qwen3-Embedding-0.6B")
+        for r in results:r["state"]=memory.current_state(db,r["id"]);r["freshness"]=evolution.freshness(db,r["id"])
         if record:
             with db:
                 if memory.table(db,"evo_journal"): evolution.log(db,"recall","Извлечено записей: %d"%len(results))
@@ -250,7 +249,7 @@ def dashboard(path,light=False):
         revision=db.execute("SELECT version FROM atlas_revision WHERE id=1").fetchone()[0] if memory.table(db,"atlas_revision") else 0
         if light:
             return {"state":st,"revision":revision,"health":{"nodes":db.execute("SELECT COUNT(*) FROM nodes").fetchone()[0],"edges":db.execute("SELECT COUNT(*) FROM edges").fetchone()[0],"pending":db.execute("SELECT COUNT(*) FROM cog_candidates WHERE state='pending'").fetchone()[0]},"skills":[dict(r) for r in db.execute("SELECT * FROM cog_skills ORDER BY name")],"events":[dict(r) for r in db.execute("SELECT * FROM cog_events ORDER BY id DESC LIMIT 30")]}
-        candidates=[dict(r) for r in db.execute("SELECT c.*,EXISTS(SELECT 1 FROM cog_memory m WHERE c.subject<>'' AND m.subject=c.subject AND m.fingerprint<>c.fingerprint) conflict FROM cog_candidates c WHERE state='pending' ORDER BY id DESC LIMIT 50")]
+        candidates=[{**dict(r),"conflict":int(memory.active_conflict(db,r["subject"],r["fingerprint"]))} for r in db.execute("SELECT * FROM cog_candidates WHERE state='pending' ORDER BY id DESC LIMIT 50")]
         rejected=[dict(r) for r in db.execute("SELECT id,title FROM cog_candidates WHERE state='rejected' ORDER BY id DESC LIMIT 20")]
         relations=[dict(r) for r in db.execute("SELECT r.*,a.title source_title,b.title target_title FROM cog_relations r JOIN nodes a ON a.id=r.source JOIN nodes b ON b.id=r.target WHERE r.state='suggested' ORDER BY r.source DESC LIMIT 30")]
         counts={r[0]:r[1] for r in db.execute("SELECT kind,COUNT(*) FROM cog_memory GROUP BY kind")}
@@ -269,6 +268,10 @@ def adaptive_plan(path,text,db=None):
             failures=conn.execute("SELECT COALESCE(SUM(failures),0) FROM cog_skills").fetchone()[0]
             if failures and result["intent"] in ("repair","search"):
                 result["steps"].insert(0,"Проверить прошлые неудачные операции и не повторять их без проверки")
+        if memory.table(conn,"evo_versions") and len(text.strip())<=300:
+            found=evolution.retrieve(conn,text,active_only=True)["experience"]
+            result["experience"]=[{"id":r["id"],"title":r["title"]} for r in found]
+            if found:result["steps"].insert(0,"Проверить применимость сохранённого опыта: "+found[0]["title"])
         return result
     if db is not None:return enrich(db)
     with closing(connect(path)) as conn:return enrich(conn)

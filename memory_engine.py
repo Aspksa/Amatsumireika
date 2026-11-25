@@ -22,7 +22,10 @@ def vector(value):
     return value
 def cosine(a,b):
     if len(a)!=len(b): return 0
-    return sum(x*y for x,y in zip(a,b))/(math.sqrt(sum(x*x for x in a))*math.sqrt(sum(y*y for y in b)))
+    sa=max(map(abs,a),default=0);sb=max(map(abs,b),default=0)
+    if not sa or not sb:return 0.0
+    x=[v/sa for v in a];y=[v/sb for v in b]
+    return max(-1.0,min(1.0,math.fsum(u*v for u,v in zip(x,y))/(math.hypot(*x)*math.hypot(*y))))
 def table(db,name):
     return db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",(name,)).fetchone() is not None
 def register(db):
@@ -35,7 +38,7 @@ def existing(db,title,category,folder=None):
     if folder is not None:
         sql+=" AND folder=?";args.append(folder)
     return db.execute(sql+" ORDER BY id LIMIT 1",args).fetchone()
-def search(db,query,model=None,limit=8):
+def search(db,query,model=None,limit=8,active_only=False):
     if not isinstance(query,str) or not query.strip() or len(query)>3000: return []
     q=terms(query);register(db)
     qvec=None
@@ -51,7 +54,10 @@ def search(db,query,model=None,limit=8):
     if qvec is not None:
         cols+=",v.vector";join+=" LEFT JOIN embedding_cache v ON v.model=? AND v.digest=memory_digest(n.title)"
     else:cols+=",NULL"
-    where=" WHERE NOT EXISTS(SELECT 1 FROM cog_aliases a WHERE a.alias_id=n.id)" if has_alias else ""
+    filters=[]
+    if has_alias: filters.append("NOT EXISTS(SELECT 1 FROM cog_aliases a WHERE a.alias_id=n.id)")
+    if active_only and table(db,"evo_versions"): filters.append("COALESCE((SELECT state FROM evo_versions e WHERE e.node_id=n.id ORDER BY e.id DESC LIMIT 1),'unverified')<>'historical'")
+    where=" WHERE "+" AND ".join(filters) if filters else ""
     rows=db.execute("SELECT "+cols+" FROM nodes n"+join+where,(model,) if qvec is not None else ())
     def ranked():
         for row in rows:
@@ -65,3 +71,23 @@ def search(db,query,model=None,limit=8):
             score=lexical+semantic
             if score>0: yield (score,priority or 0,i,{"id":i,"title":title,"category":cat,"folder":folder,"kind":kind,"confidence":conf,"priority":priority,"recall_count":recalls,"score":round(score,3)})
     return [row[3] for row in heapq.nlargest(limit,ranked(),key=lambda x:x[:3])]
+
+def subject(title,kind):
+    if kind!="fact":return ""
+    match=re.fullmatch(r"([^=:]{1,80})\s*[=:]\s*(\S.*)",title)
+    return norm(match[1]) if match else ""
+def canonical(db,node):
+    seen=set()
+    while node not in seen:
+        seen.add(node)
+        row=db.execute("SELECT canonical_id FROM cog_aliases WHERE alias_id=?",(node,)).fetchone()
+        if not row:return node
+        node=row[0]
+    raise ValueError("Цикл группы дубликатов")
+def current_state(db,node):
+    if not table(db,"evo_versions"):return "unverified"
+    row=db.execute("SELECT state FROM evo_versions WHERE node_id=? ORDER BY id DESC LIMIT 1",(node,)).fetchone()
+    return row[0] if row else "unverified"
+def active_conflict(db,subject,fp):
+    if not subject:return False
+    return bool(db.execute("SELECT 1 FROM cog_memory m WHERE subject=? AND fingerprint<>? AND COALESCE((SELECT state FROM evo_versions v WHERE v.node_id=m.node_id ORDER BY id DESC LIMIT 1),'unverified')<>'historical' AND NOT EXISTS(SELECT 1 FROM cog_aliases a WHERE a.alias_id=m.node_id) LIMIT 1",(subject,fp)).fetchone())

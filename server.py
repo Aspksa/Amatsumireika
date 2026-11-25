@@ -44,6 +44,12 @@ def initialize():
                 temp=backup.with_suffix(".tmp")
                 with closing(sqlite3.connect(temp)) as dest: db.backup(dest)
                 temp.replace(backup)
+        if db.execute("PRAGMA user_version").fetchone()[0]<6 and memory.table(db,"nodes"):
+            backup=DB.with_name(DB.name+".before-v6.bak")
+            if not backup.exists():
+                temp=backup.with_suffix(".tmp")
+                with closing(sqlite3.connect(temp)) as dest: db.backup(dest)
+                temp.replace(backup)
         db.executescript("""
         CREATE TABLE IF NOT EXISTS nodes(id INTEGER PRIMARY KEY, title TEXT NOT NULL, category TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS edges(source INTEGER REFERENCES nodes(id), target INTEGER REFERENCES nodes(id), PRIMARY KEY(source,target), CHECK(source<target));
@@ -70,7 +76,7 @@ def initialize():
         evolution.init(db)
         db.execute("CREATE TABLE IF NOT EXISTS atlas_revision(id INTEGER PRIMARY KEY CHECK(id=1),version INTEGER NOT NULL)")
         db.execute("INSERT OR IGNORE INTO atlas_revision VALUES(1,0)")
-        for table in ("nodes","edges","cog_relations","cog_aliases"):
+        for table in ("nodes","edges","cog_relations","cog_aliases","evo_versions","evo_review"):
             for operation in ("INSERT","UPDATE","DELETE"):
                 db.execute(f"CREATE TRIGGER IF NOT EXISTS rev_{table}_{operation.lower()} AFTER {operation} ON {table} BEGIN UPDATE atlas_revision SET version=version+1 WHERE id=1; END")
         if db.execute("PRAGMA user_version").fetchone()[0]<5:
@@ -78,6 +84,8 @@ def initialize():
                 kind=next((k for k,v in cognitive.TYPES.items() if v==category),"fact")
                 db.execute("UPDATE cog_memory SET kind=?,subject=?,fingerprint=? WHERE node_id=? AND source='manual'",(kind,cognitive.subject_of(title,kind),cognitive.digest(kind+"\0"+title),ident))
             db.execute("PRAGMA user_version=5")
+        if db.execute("PRAGMA user_version").fetchone()[0]<6:
+            db.execute("PRAGMA user_version=6")
 
 def event(db, kind, detail):
     db.execute("INSERT INTO atlas_events(at,kind,detail) VALUES(?,?,?)",
@@ -415,7 +423,7 @@ def send_chat(content):
             result=cognitive.adaptive_plan(DB,content[6:],db);append("system","Локальный план: "+"; ".join(result["steps"]))
         elif command.startswith("/найти "):
             # Reuse current connection to avoid a second writer while chat transaction is open.
-            matches=[r["title"] for r in memory.search(db,content[7:],gateway.EMBED_MODEL)]
+            matches=[r["title"]+(" [историческая запись]" if memory.current_state(db,r["id"])=="historical" else "") for r in memory.search(db,content[7:],gateway.EMBED_MODEL)]
             append("system","Локальная память: "+("; ".join(matches) if matches else "Совпадений нет"))
         elif command=="/статус":
             count=db.execute("SELECT COUNT(*) FROM nodes").fetchone()[0]
@@ -606,8 +614,8 @@ class Handler(BaseHTTPRequestHandler):
                 elif action=="settings": cognitive.configure(DB,data)
                 elif action=="feedback": cognitive.feedback(DB,data)
                 elif action=="preview":
-                    result=cognitive.lookup(DB,data.get("query"),False)
-                    self.reply(200,{"memory":[{"id":r["id"],"title":r["title"],"category":r["category"]} for r in result["results"] if cognitive.safe(r["title"])][:5]});return
+                    result=evolution.preview(DB,data.get("query"))
+                    self.reply(200,{"memory":[{"id":r["id"],"title":r["title"],"category":r["category"]} for r in result["seeds"]+result["linked"] if cognitive.safe(r["title"]) and r["freshness"]!="review_due"][:5]});return
                 elif action=="lookup":
                     self.reply(200,cognitive.lookup(DB,data.get("query"),True));return
                 elif action=="plan":
