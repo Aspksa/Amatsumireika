@@ -110,6 +110,15 @@ async function main(){
   await until(()=>evaluate('document.querySelector("#cog-persona").textContent.includes("кицунэ")'),"cognitive settings");
   assert.equal(await evaluate('document.querySelector("#settings-api-content").hidden'),true);
   assert.equal(await evaluate('document.querySelector("#settings-cognitive-content").hidden'),false);
+  await evaluate('document.querySelector("#evo-panel").open=true');
+  await until(()=>evaluate('document.querySelector("#evo-message").textContent.includes("Готово")'),"evolution report");
+  await evaluate('document.querySelector("#evo-quality").click()');
+  await until(()=>evaluate('document.querySelector("#evo-quality-result").textContent.includes("нарушений")'),"evolution quality");
+  await evaluate('document.querySelector("#evo-page-first").click()');
+  await until(()=>evaluate('document.querySelector("#evo-page-next").disabled'),"bounded page");
+  await evaluate('document.querySelector("#evo-query").value="тестовая память";document.querySelector("#evo-explore").click()');
+  await until(()=>evaluate('document.querySelector("#evo-route").textContent.includes("Гибридный поиск")'),"evolution retrieval");
+  assert.deepEqual(errors,[]);
   assert.deepEqual(errors,[]);
   await evaluate('document.querySelector("#settings-back").click()');
   assert.equal(await evaluate('document.querySelector("#project-settings-page").hidden'),true);

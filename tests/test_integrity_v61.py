@@ -55,3 +55,13 @@ class Integrity61Test(unittest.TestCase):
         server.initialize()
         self.assertTrue(self.path.with_name(self.path.name+".before-v6.bak").exists())
         with closing(server.connect()) as db:self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0],6)
+
+    def test_indexed_and_unindexed_search(self):
+        a=server.add_node("Старый документ","Документы","Механика")
+        with closing(server.connect()) as db,db:memory.index_batch(db)
+        b=server.add_node("Новый документ","Документы","Механика")
+        with closing(server.connect()) as db:
+            self.assertEqual({r["id"] for r in memory.search(db,"Механика")},{a,b})
+        with closing(server.connect()) as db,db:
+            db.execute("UPDATE nodes SET folder='Электрика' WHERE id=?",(a,))
+            self.assertEqual([r["id"] for r in memory.search(db,"Электрика")],[a])

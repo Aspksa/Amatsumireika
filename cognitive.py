@@ -94,6 +94,7 @@ def cycle(path,force=False):
             with db:
                 if not force and not db.execute("SELECT enabled FROM cog_state WHERE id=1").fetchone()[0]: return {"paused":True}
                 db.execute("BEGIN IMMEDIATE")
+                if memory.table(db,"memory_indexed"): memory.index_batch(db)
                 rows=db.execute("SELECT id,content FROM chat_messages m WHERE role='user' AND NOT EXISTS(SELECT 1 FROM cog_seen s WHERE s.source='local:'||m.id) ORDER BY id LIMIT ?",(BATCH,)).fetchall()
                 for row in rows: inspect_message(db,"local:"+str(row["id"]),row["content"])
                 processed=len(rows)

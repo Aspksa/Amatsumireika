@@ -58,7 +58,13 @@ def search(db,query,model=None,limit=8,active_only=False):
     if has_alias: filters.append("NOT EXISTS(SELECT 1 FROM cog_aliases a WHERE a.alias_id=n.id)")
     if active_only and table(db,"evo_versions"): filters.append("COALESCE((SELECT state FROM evo_versions e WHERE e.node_id=n.id ORDER BY e.id DESC LIMIT 1),'unverified')<>'historical'")
     where=" WHERE "+" AND ".join(filters) if filters else ""
-    rows=db.execute("SELECT "+cols+" FROM nodes n"+join+where,(model,) if qvec is not None else ())
+    args=(model,) if qvec is not None else ()
+    base="nodes n"
+    if qvec is None and q and table(db,"memory_postings") and table(db,"memory_indexed"):
+        marks=",".join("?" for _ in q)
+        base="(SELECT node_id id FROM memory_postings WHERE term IN ("+marks+") UNION SELECT id FROM nodes WHERE NOT EXISTS(SELECT 1 FROM memory_indexed i WHERE i.node_id=nodes.id)) candidates JOIN nodes n ON n.id=candidates.id"
+        args=tuple(sorted(q))
+    rows=db.execute("SELECT "+cols+" FROM "+base+join+where,args)
     def ranked():
         for row in rows:
             i,title,cat,folder,kind,conf,priority,recalls,raw=row
@@ -91,3 +97,15 @@ def current_state(db,node):
 def active_conflict(db,subject,fp):
     if not subject:return False
     return bool(db.execute("SELECT 1 FROM cog_memory m WHERE subject=? AND fingerprint<>? AND COALESCE((SELECT state FROM evo_versions v WHERE v.node_id=m.node_id ORDER BY id DESC LIMIT 1),'unverified')<>'historical' AND NOT EXISTS(SELECT 1 FROM cog_aliases a WHERE a.alias_id=m.node_id) LIMIT 1",(subject,fp)).fetchone())
+
+def init_index(db):
+    db.execute("CREATE TABLE IF NOT EXISTS memory_indexed(node_id INTEGER PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE)")
+    db.execute("CREATE TABLE IF NOT EXISTS memory_postings(term TEXT NOT NULL,node_id INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,PRIMARY KEY(term,node_id))")
+    db.execute("CREATE INDEX IF NOT EXISTS memory_postings_node ON memory_postings(node_id)")
+    db.execute("CREATE TRIGGER IF NOT EXISTS memory_invalidate AFTER UPDATE OF title,category,folder ON nodes BEGIN DELETE FROM memory_postings WHERE node_id=NEW.id; DELETE FROM memory_indexed WHERE node_id=NEW.id; END")
+def index_batch(db,limit=200):
+    rows=db.execute("SELECT id,title,category,folder FROM nodes n WHERE NOT EXISTS(SELECT 1 FROM memory_indexed i WHERE i.node_id=n.id) ORDER BY id LIMIT ?",(limit,)).fetchall()
+    for ident,title,category,folder in rows:
+        db.executemany("INSERT OR IGNORE INTO memory_postings VALUES(?,?)",((word,ident) for word in terms(title+" "+category+" "+folder)))
+        db.execute("INSERT OR IGNORE INTO memory_indexed VALUES(?)",(ident,))
+    return len(rows)

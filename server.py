@@ -74,9 +74,10 @@ def initialize():
         db.execute("CREATE INDEX IF NOT EXISTS idx_nodes_created ON nodes(created_at)")
         cognitive.init(db)
         evolution.init(db)
+        memory.init_index(db)
         db.execute("CREATE TABLE IF NOT EXISTS atlas_revision(id INTEGER PRIMARY KEY CHECK(id=1),version INTEGER NOT NULL)")
         db.execute("INSERT OR IGNORE INTO atlas_revision VALUES(1,0)")
-        for table in ("nodes","edges","cog_relations","cog_aliases","evo_versions","evo_review"):
+        for table in ("nodes","edges","cog_relations","cog_aliases","evo_versions","evo_review","cog_memory"):
             for operation in ("INSERT","UPDATE","DELETE"):
                 db.execute(f"CREATE TRIGGER IF NOT EXISTS rev_{table}_{operation.lower()} AFTER {operation} ON {table} BEGIN UPDATE atlas_revision SET version=version+1 WHERE id=1; END")
         if db.execute("PRAGMA user_version").fetchone()[0]<5:
