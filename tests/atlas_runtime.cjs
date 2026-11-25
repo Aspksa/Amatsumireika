@@ -51,6 +51,7 @@ assert.equal(productionDay(new Date(2027,1,20,12)),"short");
 assert.equal(productionDay(new Date(2027,1,22,12)),"transfer");
 assert.equal(productionDay(new Date(2027,10,5,12)),"transfer");
 assert.equal(productionDay(new Date(2028,0,1,12)),null);
+assert.equal(monthDayKind(new Date(2026,0,9,12)),"transfer");assert.equal(monthDayKind(new Date(2027,1,20,12)),"short");assert.equal(monthDayKind(new Date(2026,10,4,12)),"holiday");assert.equal(monthDayKind(new Date(2026,10,7,12)),"weekend");assert.equal(monthDayKind(new Date(2028,0,1,12)),"holiday");
 assert.equal(elapsedDays(2026,new Date(2026,11,31,12)),365);
 assert.equal(elapsedDays(2027,new Date(2027,0,1,0)),1);
 lastDay="2026-12-31";autoYear=false;calendarYear=2026;daySelected=lastDay;updateCalendarDate(new Date(2027,0,1,0));assert.equal(displayedYear(new Date(2027,0,1,0)),2027);assert.equal(daySelected,"2027-01-01");assert.equal(autoYear,true);
