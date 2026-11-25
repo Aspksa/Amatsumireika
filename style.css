@@ -129,3 +129,31 @@ main.expanded #chat-panel,body.presentation #chat-panel{display:none}
 #chat-form button{width:36px;height:36px;flex:none;padding:0;border-radius:50%;background:var(--accent);color:var(--bg);font-size:19px;font-weight:700}
 .chat-hint{margin:6px 0 0;text-align:center;font-size:9px}
 @media(max-width:760px){main:not(.expanded){grid-template-columns:minmax(0,1fr)}main:not(.expanded) #stage{grid-row:1}main:not(.expanded) #left{grid-row:2;border-right:0;max-height:none}#chat-panel{grid-row:3;min-height:65dvh;height:75dvh;border-left:0;border-top:1px solid var(--line)}#clock{font-size:40px}.calendar-panel{max-width:340px;width:100%;align-self:center}.time-panel{padding:12px 0}}
+
+/* Seamless command center and atlas: no decorative UI frames.
+   Keep keyboard focus outlines and the graph's semantic shapes. */
+header,footer{border:0;background:var(--bg);box-shadow:none}
+main:not(.expanded) #left,main:not(.expanded) #stage,#chat-panel,.chat-heading,.calendar-panel{border:0;border-radius:0;box-shadow:none;background:transparent}
+main.expanded #stage,main.expanded #right{border:0;border-radius:0;box-shadow:none}
+main.expanded #right{background:var(--bg)}
+h2,details,.entry,.category-row,.group-toggle,.event-row{border:0}
+#chat-form{border:0;background:var(--surface);box-shadow:none}
+#chat-input{border:0;box-shadow:none}
+button,input,select,.swatch,#tooltip,#module-tip{border-color:transparent;box-shadow:none}
+button:hover:not(:disabled),button.active{background:var(--surface);color:var(--accent)}
+button.primary,.modes button.active,#chat-form button:not(:disabled){background:var(--accent);color:var(--bg)}
+#chat-form button:disabled{background:var(--surface);color:var(--muted)}
+#core-open,#core-open:hover,#core-open:focus-visible{border-color:transparent;background:transparent;box-shadow:none}
+#core-open span{border:0}
+.calendar-panel #calendar button,.calendar-panel #calendar button:hover,.calendar-panel #calendar .day-with-events{border-color:transparent}
+.calendar-panel #calendar .day-with-events:not(.day-selected){box-shadow:inset 0 -2px 0 var(--accent)}
+.calendar-panel #calendar .day-selected,.calendar-panel #calendar .day-selected:hover{background:var(--accent);color:var(--bg)}
+.swatch.active{background:var(--surface)}
+#controls input[type=range]::-webkit-slider-runnable-track{border:0}
+#controls input[type=range]::-moz-range-track{border:0}
+#controls input[type=range]::-webkit-slider-thumb{border:0}
+#controls input[type=range]::-moz-range-thumb{border:0}
+.activity-cell i,.matrix-cell{border:0;box-shadow:none}
+:where(button,input,select,textarea,summary):focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#core-open:focus-visible{outline:2px solid var(--accent)}
+@media(max-width:760px){#chat-panel,main:not(.expanded) #left{border:0}}
