@@ -43,6 +43,12 @@ async function main(){
   assert.equal(await evaluate('document.querySelector(".chrono-clock").firstElementChild.id'),"clock");
   assert.equal(await evaluate('document.querySelector(".chrono-stats")===null'),true);
   assert.equal(await evaluate('document.querySelector("#month-grid").children.length'),42);
+  assert.ok(await evaluate('document.querySelector(".month-calendar").getBoundingClientRect().top-document.querySelector(".chrono-wheel").getBoundingClientRect().bottom>=23'),"calendar below wheel");
+  assert.equal(await evaluate('document.querySelector("#spiral-tooltip").hidden'),true);
+  await evaluate('(()=>{const w=document.querySelector("#year-wheel"),r=w.getBoundingClientRect();w.dispatchEvent(new PointerEvent("pointermove",{clientX:r.left+r.width/2,clientY:r.top+r.height*(160-76)/320,bubbles:true}))})()');
+  assert.equal(await evaluate('document.querySelector("#spiral-tooltip").hidden'),false);
+  await evaluate('document.querySelector("#year-wheel").dispatchEvent(new PointerEvent("pointerleave"))');
+  assert.equal(await evaluate('document.querySelector("#spiral-tooltip").hidden'),true);
   assert.ok(await evaluate(`getComputedStyle(document.querySelector("#month-heading")).getPropertyValue("--season-dark").trim().startsWith("#")`));
   assert.equal(await evaluate('document.querySelector(".chrono-select,.month-footer,#month-today,#selected-date,#calendar-date-label,#month-expand")===null'),true);
   assert.equal(await evaluate('getComputedStyle(document.querySelector(".month-calendar")).borderTopWidth'),"0px");

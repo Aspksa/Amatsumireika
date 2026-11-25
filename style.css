@@ -365,3 +365,11 @@ h2{font:650 var(--type-xs)/1.4 var(--sans);letter-spacing:.08em}
 #left[data-cinema="off"] #month-grid{animation:none}
 @media(prefers-reduced-motion:reduce){#left.chrono-month-transition #month-grid{animation:none}#left .month-day{transition:none}}
 @media(max-width:760px){.brand-name{font-size:20px}.brand em{font-size:12px}.stage-title h1{font-size:22px}}
+
+/* Clear annual silhouette: stepped calendar weeks, horizontal month captions, lower calendar. */
+#left .chrono-wheel{max-width:510px}
+#left .month-calendar{margin:clamp(24px,5cqw,44px) auto 0}
+#left .chrono-wheel #year-wheel{cursor:pointer}
+#spiral-tooltip{position:absolute;bottom:3px;left:50%;transform:translateX(-50%);z-index:4;pointer-events:none;max-width:95%;width:max-content;text-align:center;background:var(--surface);color:var(--ink);padding:5px 9px;border-radius:6px;font:500 11px/1.4 var(--sans)}
+#spiral-tooltip[hidden]{display:none}
+@media(max-width:760px){#left .month-calendar{margin-top:24px}}
