@@ -122,6 +122,15 @@ async function main(){
   assert.deepEqual(errors,[]);
   await evaluate('document.querySelector("#settings-back").click()');
   assert.equal(await evaluate('document.querySelector("#project-settings-page").hidden'),true);
+  await evaluate('document.querySelector("#disk").click()');
+  await until(()=>evaluate('!document.querySelector("#disk-page").hidden && document.querySelector("#disk-stats").textContent.includes("файлов")'),"document workspace");
+  await evaluate('(()=>{const dt=new DataTransfer();dt.items.add(new File(["Документ CI: запасная деталь"],"test-ci.txt",{type:"text/plain"}));document.querySelector("#disk-upload").files=dt.files;document.querySelector("#disk-upload-go").click()})()');
+  await until(()=>evaluate('document.querySelector("#disk-list").textContent.includes("test-ci.txt")'),"document upload");
+  await evaluate('Array.from(document.querySelectorAll(".disk-file")).find(b=>b.textContent.includes("test-ci.txt")).click()');
+  await until(()=>evaluate('document.querySelector("#disk-preview").textContent.includes("запасная деталь")'),"document text preview");
+  await evaluate('document.querySelector("#disk-back").click()');
+  assert.equal(await evaluate('document.querySelector("#disk-page").hidden'),true);
+  assert.deepEqual(errors,[]);
   await evaluate('document.querySelector("#atlas").click()');await delay(200);await evaluate('Array.from(document.querySelectorAll(".swatch")).find(b=>b.textContent.includes("Бумага")).click()');await evaluate('document.querySelector("#home").click()');await delay(350);
   assert.equal(await evaluate('document.documentElement.classList.contains("paper")'),true);
   assert.equal(await evaluate('getComputedStyle(document.querySelector("#clock")).color'),"rgb(128, 85, 15)");

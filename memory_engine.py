@@ -55,6 +55,7 @@ def search(db,query,model=None,limit=8,active_only=False):
         cols+=",v.vector";join+=" LEFT JOIN embedding_cache v ON v.model=? AND v.digest=memory_digest(n.title)"
     else:cols+=",NULL"
     filters=[]
+    if table(db,"documents"): filters.append("NOT EXISTS(SELECT 1 FROM documents d WHERE d.node_id=n.id AND d.deleted IS NOT NULL)")
     if has_alias: filters.append("NOT EXISTS(SELECT 1 FROM cog_aliases a WHERE a.alias_id=n.id)")
     if active_only and table(db,"evo_versions"): filters.append("COALESCE((SELECT state FROM evo_versions e WHERE e.node_id=n.id ORDER BY e.id DESC LIMIT 1),'unverified')<>'historical'")
     where=" WHERE "+" AND ".join(filters) if filters else ""
@@ -64,12 +65,22 @@ def search(db,query,model=None,limit=8,active_only=False):
         marks=",".join("?" for _ in q)
         base="(SELECT node_id id FROM memory_postings WHERE term IN ("+marks+") UNION SELECT id FROM nodes WHERE NOT EXISTS(SELECT 1 FROM memory_indexed i WHERE i.node_id=nodes.id)) candidates JOIN nodes n ON n.id=candidates.id"
         args=tuple(sorted(q))
+    if table(db,"documents") and q:
+        if qvec is None and base!="nodes n":
+            marks=",".join("?" for _ in q)
+            base=base.replace(") candidates JOIN"," UNION SELECT d.node_id FROM document_terms t JOIN documents d ON d.id=t.document_id WHERE d.deleted IS NULL AND t.term IN ("+marks+")) candidates JOIN")
+            args=args+tuple(sorted(q))
+        cols+=",COALESCE((SELECT content FROM documents d WHERE d.node_id=n.id AND d.deleted IS NULL),\x27\x27)"
+    else:cols+=",\x27\x27"
     rows=db.execute("SELECT "+cols+" FROM "+base+join+where,args)
     def ranked():
         for row in rows:
-            i,title,cat,folder,kind,conf,priority,recalls,raw=row
+            i,title,cat,folder,kind,conf,priority,recalls,raw,document_text=row
             words=terms(title+" "+cat+" "+folder)
             lexical=len(q&words)/max(1,len(q|words))
+            if document_text:
+                doc_words=terms(document_text)
+                lexical=max(lexical,0.5*len(q&doc_words)/max(1,len(q)))
             semantic=0
             if qvec is not None and raw:
                 try:semantic=max(0,cosine(qvec,vector(json.loads(raw))))

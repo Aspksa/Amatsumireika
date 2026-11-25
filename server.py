@@ -4,6 +4,7 @@ import cloud_api
 import gateway
 import cognitive
 import evolution
+import documents
 import memory_engine as memory
 import budget
 import logging
@@ -50,6 +51,12 @@ def initialize():
                 temp=backup.with_suffix(".tmp")
                 with closing(sqlite3.connect(temp)) as dest: db.backup(dest)
                 temp.replace(backup)
+        if db.execute("PRAGMA user_version").fetchone()[0]<7 and memory.table(db,"nodes"):
+            backup=DB.with_name(DB.name+".before-v7.bak")
+            if not backup.exists():
+                temp=backup.with_suffix(".tmp")
+                with closing(sqlite3.connect(temp)) as dest:db.backup(dest)
+                temp.replace(backup)
         db.executescript("""
         CREATE TABLE IF NOT EXISTS nodes(id INTEGER PRIMARY KEY, title TEXT NOT NULL, category TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS edges(source INTEGER REFERENCES nodes(id), target INTEGER REFERENCES nodes(id), PRIMARY KEY(source,target), CHECK(source<target));
@@ -74,10 +81,12 @@ def initialize():
         db.execute("CREATE INDEX IF NOT EXISTS idx_nodes_created ON nodes(created_at)")
         cognitive.init(db)
         evolution.init(db)
+        documents.init(db)
+        documents.root(DB).mkdir(parents=True,exist_ok=True)
         memory.init_index(db)
         db.execute("CREATE TABLE IF NOT EXISTS atlas_revision(id INTEGER PRIMARY KEY CHECK(id=1),version INTEGER NOT NULL)")
         db.execute("INSERT OR IGNORE INTO atlas_revision VALUES(1,0)")
-        for table in ("nodes","edges","cog_relations","cog_aliases","evo_versions","evo_review","cog_memory"):
+        for table in ("nodes","edges","cog_relations","cog_aliases","evo_versions","evo_review","cog_memory","documents"):
             for operation in ("INSERT","UPDATE","DELETE"):
                 db.execute(f"CREATE TRIGGER IF NOT EXISTS rev_{table}_{operation.lower()} AFTER {operation} ON {table} BEGIN UPDATE atlas_revision SET version=version+1 WHERE id=1; END")
         if db.execute("PRAGMA user_version").fetchone()[0]<5:
@@ -87,6 +96,7 @@ def initialize():
             db.execute("PRAGMA user_version=5")
         if db.execute("PRAGMA user_version").fetchone()[0]<6:
             db.execute("PRAGMA user_version=6")
+        if db.execute("PRAGMA user_version").fetchone()[0]<7:db.execute("PRAGMA user_version=7")
 
 def event(db, kind, detail):
     db.execute("INSERT INTO atlas_events(at,kind,detail) VALUES(?,?,?)",
@@ -419,9 +429,12 @@ def send_chat(content):
         append("user",content)
         command=content.casefold()
         if command=="/помощь":
-            append("system","Локальные команды: /статус, /найти текст, /план задача. Облачный ответ требует отдельного согласия.")
+            append("system","Локальные команды: /статус, /найти текст, /документы текст, /план задача. Облачный ответ требует отдельного согласия.")
         elif command.startswith("/план "):
             result=cognitive.adaptive_plan(DB,content[6:],db);append("system","Локальный план: "+"; ".join(result["steps"]))
+        elif command.startswith("/документы "):
+            matches=documents.list_docs(DB,content[11:][:300])["files"][:8]
+            append("system","Документы: "+("; ".join("#"+str(r["id"])+" "+r["name"] for r in matches) or "Совпадений нет"))
         elif command.startswith("/найти "):
             # Reuse current connection to avoid a second writer while chat transaction is open.
             matches=[r["title"]+(" [историческая запись]" if memory.current_state(db,r["id"])=="historical" else "") for r in memory.search(db,content[7:],gateway.EMBED_MODEL)]
@@ -437,8 +450,8 @@ def send_chat(content):
 def snapshot():
     with closing(connect()) as db:
         db.execute("BEGIN")
-        return {"revision":db.execute("SELECT version FROM atlas_revision WHERE id=1").fetchone()[0],"causes":[dict(source=a,target=b) for a,b in db.execute("SELECT source,target FROM cog_relations WHERE kind='cause' AND state='approved'")],"nodes":[dict(id=i,title=t,category=c,folder=f,created_at=at) for i,t,c,f,at in db.execute("SELECT id,title,category,folder,created_at FROM nodes ORDER BY id")],
-                "edges":[dict(source=s,target=t) for s,t in db.execute("SELECT source,target FROM edges ORDER BY source,target")],
+        return {"revision":db.execute("SELECT version FROM atlas_revision WHERE id=1").fetchone()[0],"causes":[dict(source=a,target=b) for a,b in db.execute("SELECT source,target FROM cog_relations WHERE kind='cause' AND state='approved' AND NOT EXISTS(SELECT 1 FROM documents d WHERE d.deleted IS NOT NULL AND d.node_id IN (source,target))")],"nodes":[dict(id=i,title=t,category=c,folder=f,created_at=at) for i,t,c,f,at in db.execute("SELECT id,title,category,folder,created_at FROM nodes WHERE NOT EXISTS(SELECT 1 FROM documents d WHERE d.node_id=nodes.id AND d.deleted IS NOT NULL) ORDER BY id")],
+                "edges":[dict(source=s,target=t) for s,t in db.execute("SELECT source,target FROM edges WHERE NOT EXISTS(SELECT 1 FROM documents d WHERE d.deleted IS NOT NULL AND d.node_id IN (source,target)) ORDER BY source,target")],
                 "categories":CATEGORIES}
 
 def snapshot_window(after=0,limit=10000):
@@ -446,15 +459,15 @@ def snapshot_window(after=0,limit=10000):
         raise ValueError("Invalid atlas window")
     with closing(connect()) as db:
         db.execute("BEGIN")
-        rows=db.execute("SELECT id,title,category,folder,created_at FROM nodes WHERE id>? ORDER BY id LIMIT ?",(after,limit+1)).fetchall()
+        rows=db.execute("SELECT id,title,category,folder,created_at FROM nodes WHERE id>? AND NOT EXISTS(SELECT 1 FROM documents d WHERE d.node_id=nodes.id AND d.deleted IS NOT NULL) ORDER BY id LIMIT ?",(after,limit+1)).fetchall()
         more=len(rows)>limit;rows=rows[:limit]
         lo,hi=(rows[0][0],rows[-1][0]) if rows else (0,0)
-        total=db.execute("SELECT COUNT(*) FROM nodes").fetchone()[0]
-        total_edges=db.execute("SELECT COUNT(*) FROM edges").fetchone()[0]
+        total=db.execute("SELECT COUNT(*) FROM nodes WHERE NOT EXISTS(SELECT 1 FROM documents d WHERE d.node_id=nodes.id AND d.deleted IS NOT NULL)").fetchone()[0]
+        total_edges=db.execute("SELECT COUNT(*) FROM edges WHERE NOT EXISTS(SELECT 1 FROM documents d WHERE d.deleted IS NOT NULL AND d.node_id IN (source,target))").fetchone()[0]
         return {"revision":db.execute("SELECT version FROM atlas_revision WHERE id=1").fetchone()[0],
                 "nodes":[dict(id=i,title=t,category=c,folder=f,created_at=at) for i,t,c,f,at in rows],
-                "edges":[dict(source=s,target=t) for s,t in db.execute("SELECT source,target FROM edges WHERE source BETWEEN ? AND ? AND target BETWEEN ? AND ? ORDER BY source,target LIMIT 50000",(lo,hi,lo,hi))],
-                "causes":[dict(source=s,target=t) for s,t in db.execute("SELECT source,target FROM cog_relations WHERE kind='cause' AND state='approved' AND source BETWEEN ? AND ? AND target BETWEEN ? AND ? LIMIT 10000",(lo,hi,lo,hi))],
+                "edges":[dict(source=s,target=t) for s,t in db.execute("SELECT source,target FROM edges WHERE source BETWEEN ? AND ? AND target BETWEEN ? AND ? AND NOT EXISTS(SELECT 1 FROM documents d WHERE d.deleted IS NOT NULL AND d.node_id IN (source,target)) ORDER BY source,target LIMIT 50000",(lo,hi,lo,hi))],
+                "causes":[dict(source=s,target=t) for s,t in db.execute("SELECT source,target FROM cog_relations WHERE kind='cause' AND state='approved' AND source BETWEEN ? AND ? AND target BETWEEN ? AND ? AND NOT EXISTS(SELECT 1 FROM documents d WHERE d.deleted IS NOT NULL AND d.node_id IN (source,target)) LIMIT 10000",(lo,hi,lo,hi))],
                 "categories":CATEGORIES,"total_nodes":total,"total_edges":total_edges,"after":after,"next":hi if more else None}
 
 def add_node(title, category, folder=""):
@@ -547,6 +560,26 @@ class Handler(BaseHTTPRequestHandler):
         path=urlsplit(self.path).path
         if path=="/api/health":
             self.reply(200,{"app":"Amatsumireika","instance":self.server.instance,"ready":True})
+        elif path=="/api/documents":
+            q=parse_qs(urlsplit(self.path).query)
+            self.reply(200,documents.list_docs(DB,q.get("q",[""])[0],q.get("trash",["0"])[0]=="1",q.get("folder",[""])[0],int(q.get("after",["0"])[0])))
+        elif path=="/api/documents/health":
+            self.reply(200,documents.health(DB))
+        elif path=="/api/documents/by-node":
+            self.reply(200,documents.by_node(DB,int(parse_qs(urlsplit(self.path).query).get("id",["0"])[0])))
+        elif path=="/api/documents/preview":
+            self.reply(200,documents.preview(DB,int(parse_qs(urlsplit(self.path).query).get("id",["0"])[0])))
+        elif path=="/api/documents/download":
+            from urllib.parse import quote
+            name,raw=documents.binary(DB,int(parse_qs(urlsplit(self.path).query).get("id",["0"])[0]))
+            self.send_response(200)
+            self.send_header("Content-Type","application/octet-stream")
+            self.send_header("Content-Disposition","attachment; filename*=UTF-8\x27\x27"+quote(name,safe=""))
+            self.send_header("Content-Length",str(len(raw)))
+            self.send_header("X-Content-Type-Options","nosniff")
+            self.send_header("Cache-Control","no-store")
+            self.end_headers()
+            if self.command!="HEAD":self.wfile.write(raw)
         elif path=="/api/evolution/conflicts":
             with closing(evolution.connect(DB)) as db:
                 self.reply(200,{"conflicts":evolution.conflict_rows(db,200)})
@@ -612,12 +645,17 @@ class Handler(BaseHTTPRequestHandler):
             return
         try:
             n=int(self.headers.get("Content-Length","0"))
-            if not 0<n<=16384:
+            limit=4*((documents.MAX_BYTES+2)//3)+4096 if self.path=="/api/documents/upload" else 16384
+            if not 0<n<=limit:
                 self.close_connection = True
                 raise ValueError("Invalid request length")
             data=json.loads(self.rfile.read(n))
             if not isinstance(data,dict):
                 raise ValueError("Expected object")
+            if self.path=="/api/documents/upload":
+                self.reply(200,documents.upload(DB,data));return
+            if self.path=="/api/documents/action":
+                self.reply(200,documents.action(DB,data));return
             if self.path.startswith("/api/evolution/"):
                 action=self.path.rsplit("/",1)[-1]
                 if action=="explore": result=evolution.explore(DB,data)

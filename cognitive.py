@@ -124,7 +124,7 @@ def cycle(path,force=False):
                     for other in others:
                         if not safe(other["title"]): continue
                         sim=similarity(row["title"],other["title"])
-                        exact=row["category"]==other["category"] and norm(row["title"])==norm(other["title"])
+                        exact=row["category"]==other["category"] and norm(row["title"])==norm(other["title"]) and row["category"]!="Документы"
                         if sim>=.6 or exact:
                             a,b=sorted((row["id"],other["id"]))
                             kind="duplicate" if exact else "association"
@@ -203,6 +203,7 @@ def relation(path,data):
                 emit(db,"relation","Подтверждена связь: "+kind,a)
             elif kind=="duplicate" and action=="approve":
                 rows=db.execute("SELECT id,title,category FROM nodes WHERE id IN (?,?) ORDER BY id",(a,b)).fetchall()
+                if memory.table(db,"documents") and db.execute("SELECT 1 FROM documents WHERE node_id IN (?,?)",(a,b)).fetchone(): raise ValueError("Файловые записи нельзя объединять по имени")
                 if norm(rows[0]["title"])!=norm(rows[1]["title"]) or rows[0]["category"]!=rows[1]["category"]: raise ValueError("Only exact normalized duplicates can be grouped")
                 canonical,other=sorted((memory.canonical(db,a),memory.canonical(db,b)))
                 if canonical!=other:

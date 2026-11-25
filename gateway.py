@@ -114,7 +114,7 @@ def submit(path,data):
                 raise ValueError("Do not send API keys in chat")
             for item in context:
                 row=db.execute("SELECT title,category FROM nodes WHERE id=?",(item["id"],)).fetchone()
-                if not row or tuple(row)!=(item["title"],item["category"]) or not cognitive.safe(item["title"]) or key in item["title"] or memory.current_state(db,item["id"])=="historical" or evolution.freshness(db,item["id"])=="review_due": raise ValueError("Запись изменилась, устарела или содержит защищённые данные; обновите предварительный просмотр")
+                if not row or tuple(row)!=(item["title"],item["category"]) or not cognitive.safe(item["title"]) or key in item["title"] or memory.current_state(db,item["id"])=="historical" or evolution.freshness(db,item["id"])=="review_due" or (memory.table(db,"documents") and db.execute("SELECT 1 FROM documents WHERE node_id=? AND deleted IS NOT NULL",(item["id"],)).fetchone()): raise ValueError("Запись изменилась, устарела или содержит защищённые данные; обновите предварительный просмотр")
             # Same text within 60 seconds is not billed twice, even with a new ID.
             recent=db.execute("SELECT id FROM cloud_jobs WHERE fingerprint=? AND model=? AND created>=? ORDER BY created DESC LIMIT 1",(fingerprint,model,datetime.fromtimestamp(time.time()-60,timezone.utc).isoformat())).fetchone()
             if recent: 
