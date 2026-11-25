@@ -1113,9 +1113,8 @@ async function diskShowHistory(file:DiskFile,req:number,root:HTMLElement){
  try{const v=await jsonRequest("/api/workspace/history?id="+file.id);if(req!==diskDetailReq||!root.isConnected)return;const rows=document.createElement("div");for(const event of v.events){const p=document.createElement("p");text(p,event.at+" · "+event.kind);rows.append(p)}for(const source of v.sources){const p=document.createElement("p");text(p,(source.title||"Источник без названия")+" · "+(source.state||"состояние не записано")+" · "+(source.node_id?"узел #"+source.node_id:"без узла"));rows.append(p)}if(!rows.childElementCount)text(rows,"Нет записанной истории");root.querySelector(".disk-history-rows")?.remove();rows.className="disk-history-rows";root.append(rows)}
  catch(err){if(req===diskDetailReq)text($("disk-message"),String(err))}
 }
-const diskRepairButton=cogButton("Автовосстановление оригиналов",()=>void diskRepair(false));
-const diskSourcesButton=cogButton("Восстановить происхождение",()=>void diskRepair(true));
-$("disk-backup").after(diskRepairButton,diskSourcesButton);
+$("disk-repair").onclick=()=>void diskRepair(false);
+$("disk-rebuild-sources").onclick=()=>void diskRepair(true);
 async function diskRepair(sources:boolean){
  if(diskBusy||!window.confirm(sources?"Восстановить только явно записанное происхождение?":"Восстановить повреждённые оригиналы из проверенных архивов? SQLite не заменяется."))return;
  diskBusy=true;
