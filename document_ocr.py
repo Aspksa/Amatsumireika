@@ -55,3 +55,30 @@ def run(path,ident):
             doc.event(db,ident,"OCR Windows: "+str(result["pages"])+"/"+str(result["total"])+" стр.; текст требует проверки",current["node_id"])
         return {"indexed":True,"pages":result["pages"],"total":result["total"],"truncated":len(result["text"].strip())>doc.MAX_TEXT}
     finally:LOCK.release()
+
+
+THUMB_LOCK=Lock()
+THUMBS={}
+def pdf_thumbnail(path,ident):
+    import base64
+    if os.name!="nt":raise ValueError("Миниатюры PDF доступны в Windows")
+    name,raw=doc.binary(path,ident)
+    if Path(name).suffix.lower()!=".pdf":raise ValueError("Не PDF")
+    key=__import__("hashlib").sha256(raw).hexdigest()
+    if not THUMB_LOCK.acquire(False):raise ValueError("Миниатюра уже создаётся")
+    try:
+        if key in THUMBS:return THUMBS[key]
+        script=Path(__file__).resolve().with_name("document_ocr.ps1")
+        powershell=Path(os.environ.get("SystemRoot",r"C:\Windows"))/"System32"/"WindowsPowerShell"/"v1.0"/"powershell.exe"
+        with tempfile.TemporaryDirectory(prefix="atlas-thumb-") as tmp:
+            f=Path(tmp)/"input.pdf";f.write_bytes(raw)
+            try:
+                p=subprocess.run([str(powershell),"-NoProfile","-NonInteractive","-ExecutionPolicy","Bypass","-File",str(script),"-Path",str(f),"-Thumbnail"],capture_output=True,timeout=15,check=True,creationflags=getattr(subprocess,"CREATE_NO_WINDOW",0))
+                img=base64.b64decode(p.stdout.strip(),validate=True)
+                if not img.startswith(b"\x89PNG\r\n\x1a\n") or len(img)>1048576:raise ValueError("Invalid PNG")
+            except (OSError,subprocess.SubprocessError,ValueError) as exc:raise ValueError("Миниатюра PDF недоступна") from exc
+        if len(THUMBS)>=32:THUMBS.pop(next(iter(THUMBS)))
+        THUMBS[key]=img
+        return img
+
+    finally:THUMB_LOCK.release()
