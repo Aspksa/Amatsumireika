@@ -258,3 +258,30 @@ main:not(.expanded) #left{justify-content:flex-start;align-items:stretch;padding
 #year-progress{font:500 clamp(9px,3cqw,13px)/1.2 var(--mono);color:var(--muted);margin-top:1px}
 :root.paper .chrono-clock #clock,:root.paper #clock-weekday{color:#80550f;text-shadow:none}
 @media(prefers-reduced-motion:reduce){.chrono-clock #clock{text-shadow:none}}
+
+/* Reference-inspired radial chart and ordinary monthly calendar. */
+@media(min-width:1000px){main:not(.expanded){grid-template-columns:minmax(0,26fr) minmax(0,41fr) minmax(0,33fr)}}
+.month-calendar{flex:none;width:100%;max-width:440px;margin:8px auto 0;padding:10px 0 6px;border-top:1px solid var(--line)}
+.month-nav{display:grid;grid-template-columns:34px minmax(0,1fr) 34px;align-items:center;gap:5px;text-align:center}
+.month-nav button{font-size:23px;line-height:1;padding:5px;background:transparent;border:0}
+#month-heading{font:650 clamp(13px,5cqw,19px)/1.3 var(--sans);text-transform:capitalize;color:var(--ink)}
+.month-weekdays,#month-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px;text-align:center}
+.month-weekdays{margin:8px 0 4px;color:var(--muted);font:600 11px var(--sans)}
+.month-day,.month-blank{min-width:0;min-height:29px;aspect-ratio:1.3}
+.month-day{padding:2px;border:1px solid transparent;background:transparent;color:var(--ink);font:600 clamp(12px,4.3cqw,16px)/1 var(--mono);font-variant-numeric:tabular-nums}
+.month-day.is-today{border-color:#ffd17a;color:#ffd17a}
+.month-day.is-selected{background:#ffd17a;color:#21180b;border-color:#ffd17a}
+.month-day:hover:not(.is-selected){border-color:var(--accent);color:var(--accent)}
+#month-today{display:block;margin:6px auto 0;background:transparent;border:0;color:var(--accent);font-size:12px}
+:root.paper .month-day.is-today{color:#80550f;border-color:#80550f}
+:root.paper .month-day.is-selected{background:#80550f;color:#fff6e5;border-color:#80550f}
+
+/* Imperial time — warm metal on obsidian, semantic gold and platinum. */
+#left .chrono-wheel{background:radial-gradient(circle at 50% 50%,#b18d4420 0,transparent 44%)}
+.chrono-legend .work{--day-color:#d9af61}.chrono-legend .weekend{--day-color:#b4bec9}.chrono-legend .holiday{--day-color:#ffe5a2}.chrono-legend .short{--day-color:#bc8254}
+:root.paper .chrono-legend .work{--day-color:#956510}:root.paper .chrono-legend .weekend{--day-color:#586779}:root.paper .chrono-legend .holiday{--day-color:#78500a}:root.paper .chrono-legend .short{--day-color:#955039}
+#left .month-day.is-selected{box-shadow:inset 0 1px 0 #fff1ca70}
+#left.chrono-month-transition #year-wheel,#left.chrono-month-transition #time-overlay,#left.chrono-month-transition #month-grid{animation:chronoMonthReveal .32s ease-out both}
+@keyframes chronoMonthReveal{from{opacity:.24}to{opacity:1}}
+#left[data-cinema="off"] #year-wheel,#left[data-cinema="off"] #time-overlay,#left[data-cinema="off"] #month-grid{animation:none}
+@media(prefers-reduced-motion:reduce){#left.chrono-month-transition #year-wheel,#left.chrono-month-transition #time-overlay,#left.chrono-month-transition #month-grid{animation:none}}
