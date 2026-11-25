@@ -123,6 +123,7 @@ class AtlasTest(unittest.TestCase):
         report=server.save_work_day({"profile_id":pid,"day":"2027-02-20","actual":9,"planned":None,"status":"normal"})
         row=next(r for r in report["rows"] if r["day"]=="2027-02-20")
         self.assertEqual((row["planned"],row["actual"],row["difference"]),(7,9,2))
+        self.assertIsNone(row["override"])
         self.assertEqual(next(r for r in report["rows"] if r["day"]=="2027-02-22")["planned"],0)
         for schedule in ("2/2","6/1","shift"):
             server.save_profile({"name":schedule,"schedule":schedule,"anchor":"2027-02-01","hours":12})
