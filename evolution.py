@@ -56,6 +56,11 @@ def freshness(db,node):
     if not row:return "unreviewed"
     return "review_due" if datetime.fromisoformat(row[0])+timedelta(days=row[1])<=datetime.now(timezone.utc) else "reviewed"
 def retrieve(db,q,active_only=False):
+    previous=db.row_factory
+    db.row_factory=sqlite3.Row
+    try:return _retrieve(db,q,active_only)
+    finally:db.row_factory=previous
+def _retrieve(db,q,active_only=False):
     # The existing global hybrid engine is the only primary retrieval algorithm.
     seeds=memory.search(db,q,MODEL,limit=8,active_only=active_only)
     for r in seeds:
@@ -166,6 +171,7 @@ def page(path,after=0,limit=200):
         return {"nodes":rows,"next":rows[-1]["id"] if more else None}
 def report(path):
     with closing(connect(path)) as db:
+        db.execute("BEGIN")
         return {"clusters":[dict(r) for r in db.execute("SELECT category,folder,COUNT(*) count FROM nodes GROUP BY category,folder ORDER BY count DESC,category,folder LIMIT 80")],
                 "conflicts":conflict_rows(db),
                 "versions":[dict(r) for r in db.execute("SELECT v.*,n.title FROM evo_versions v JOIN nodes n ON n.id=v.node_id ORDER BY v.id DESC LIMIT 40")],
@@ -194,4 +200,5 @@ def quality(path):
 def preview(path,q):
     if not isinstance(q,str) or not 1<=len(q.strip())<=300:raise ValueError("Invalid query")
     with closing(connect(path)) as db:
+        db.execute("BEGIN")
         return retrieve(db,q,active_only=True)

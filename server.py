@@ -530,6 +530,9 @@ class Handler(BaseHTTPRequestHandler):
         path=urlsplit(self.path).path
         if path=="/api/health":
             self.reply(200,{"app":"Amatsumireika","instance":self.server.instance,"ready":True})
+        elif path=="/api/evolution/conflicts":
+            with closing(evolution.connect(DB)) as db:
+                self.reply(200,{"conflicts":evolution.conflict_rows(db,200)})
         elif path=="/api/evolution/quality":
             self.reply(200,evolution.quality(DB))
         elif path=="/api/evolution":
