@@ -179,6 +179,9 @@ def save_profile(data):
     if hours==0:
         raise ValueError("Positive shift duration required")
     with closing(connect()) as db,db:
+        db.execute("BEGIN IMMEDIATE")
+        if db.execute("SELECT COUNT(*) FROM work_profiles").fetchone()[0]>=200:
+            raise ValueError("Local ledger supports up to 200 employees")
         db.execute("INSERT INTO work_profiles(name,schedule,anchor,hours) VALUES(?,?,?,?)",(name.strip(),schedule,anchor,hours))
     return get_profiles()
 
@@ -230,10 +233,11 @@ def work_report(value):
         for n in range(1,days+1):
             d=start.replace(day=n); k=d.isoformat()
             pl,ac,st=overrides.get((p["id"],k),(None,None,"normal"))
+            override=pl
             if pl is None:
                 pl=0 if st in ("leave","sick","off") else planned_hours(d,p,rules)
             diff=round(ac-pl,2) if ac is not None and pl is not None else None
-            rows.append(dict(profile_id=p["id"],name=p["name"],day=k,planned=pl,actual=ac,status=st,difference=diff))
+            rows.append(dict(profile_id=p["id"],name=p["name"],day=k,planned=pl,override=override,actual=ac,status=st,difference=diff))
             if pl is None: unknown+=1
             else: planned+=pl
             if ac is None: missing+=1
@@ -287,7 +291,7 @@ def timeline_window(start,end):
 def save_time_snapshot(data):
     day=iso_day(data.get("day")).isoformat()
     mode=data.get("mode")
-    if mode not in ("spiral","dna","galaxy","sphere","crystal","fabric","years"):
+    if mode not in ("spiral","dna","galaxy","sphere","crystal","fabric","years","projection"):
         raise ValueError("Invalid mode")
     with closing(connect()) as db,db:
         payload={"mode":mode,"nodes":db.execute("SELECT COUNT(*) FROM nodes").fetchone()[0],"edges":db.execute("SELECT COUNT(*) FROM edges").fetchone()[0]}
