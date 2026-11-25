@@ -869,7 +869,7 @@ function drawCognitiveSignals(){
  if(!cog)return;
  const elapsed=performance.now()-cogPulseAt;
  if(elapsed<3500){const ratio=Math.min(1,elapsed/3500),r=expanded?42+ratio*160:42+ratio*78;circle(0,0,reduced?65:r,colors[0]+(reduced?"88":Math.round((1-ratio)*170).toString(16).padStart(2,"0")))}
- for(const id of cogHighlights.slice(0,8)){const p=positions.get(id);if(p&&elapsed<3500){line({x:0,y:0},p,colors[0]+"99");circle(p.x,p.y,8,colors[0]+"cc")}}
+ for(const id of cogHighlights.slice(0,8)){const p=positions.get(id);if(p&&elapsed<3500){const tint=evoConflictIds.has(id)?"#dc7777":colors[0];line({x:0,y:0},p,tint+"99");circle(p.x,p.y,8,tint+"cc")}}
 }
 function openSettingsTab(tab:"api"|"cognitive"){$("settings-api-content").hidden=tab!=="api";$("settings-cognitive-content").hidden=tab!=="cognitive";$("settings-api-tab").classList.toggle("active",tab==="api");$("settings-cognitive-tab").classList.toggle("active",tab==="cognitive");if(tab==="cognitive")void loadCognitive(true)}
 $("settings-api-tab").onclick=()=>openSettingsTab("api");$("settings-cognitive-tab").onclick=()=>openSettingsTab("cognitive");
@@ -900,3 +900,25 @@ $("cog-lookup").onclick=()=>void cogAction("lookup",{query:$<HTMLInputElement>("
 $("cog-plan").onclick=()=>void cogAction("plan",{query:$<HTMLInputElement>("cog-query").value});
 $("cog-refresh").onclick=()=>void loadCognitive(true);
 void loadCognitive();setInterval(()=>{if(document.visibilityState!=="hidden"){void loadCognitive(false);if(!chatBusy)void loadChat()}},5000);
+
+type EvoRecord={id:number;title:string;category:string;state?:string;freshness?:string;via?:number;score?:number};
+let evoBusy=false,evoConflictIds=new Set<number>();
+async function evoRun(action:string,data?:unknown){if(evoBusy)return;evoBusy=true;try{
+ const result=await jsonRequest("/api/evolution"+(action?"/"+action:""),data);
+ if(!action){cogRows("evo-clusters",result.clusters.map((r:{category:string;folder:string;count:number})=>r.category+" / "+(r.folder||"Корень")+" · "+r.count));
+ const root=$("evo-conflicts");root.replaceChildren();evoConflictIds=new Set<number>();for(const r of result.conflicts){evoConflictIds.add(r.source);evoConflictIds.add(r.target);const p=document.createElement("p");text(p,r.subject+": "+r.source_title+" ↔ "+r.target_title);p.append(cogButton("#"+r.source,()=>{ $<HTMLInputElement>("evo-id").value=String(r.source);cogHighlights=[r.source,r.target];cogPulseAt=performance.now()}),cogButton("#"+r.target,()=>{$<HTMLInputElement>("evo-id").value=String(r.target);cogHighlights=[r.source,r.target];cogPulseAt=performance.now()}));root.append(p)}if(!result.conflicts.length)text(root,"Нет выявленных структурированных конфликтов");
+ cogRows("evo-versions",[...result.versions.map((r:{title:string;state:string;at:string})=>r.title+" · "+r.state+" · "+r.at.slice(0,10)),...result.due.map((r:{title:string})=>"Требует проверки: "+r.title)]);
+ cogRows("evo-digests",result.digests.map((r:{title:string;source_ids:string})=>r.title+" · источники "+r.source_ids));cogRows("evo-journal",result.journal.map((r:{at:string;detail:string})=>r.at.slice(0,19)+" · "+r.detail));
+ }else if(action==="explore"){cogRows("evo-route",result.stages.map((r:{name:string;count:number})=>r.name+" · "+r.count));const root=$("evo-results");root.replaceChildren();for(const [label,records] of [["Основные",result.seeds],["Связанные",result.linked],["Опыт",result.experience]] as [string,EvoRecord[]][]){const p=document.createElement("p");text(p,label+" · "+records.length);root.append(p);for(const r of records){const b=cogButton("#"+r.id+" "+r.title+" · "+(r.state??"")+" "+(r.freshness??""),()=>{$<HTMLInputElement>("evo-id").value=String(r.id)});root.append(b)}}cogHighlights=result.seeds.map((r:EvoRecord)=>r.id);cogPulseAt=performance.now();
+ }else if(action==="semantic"){cogRows("evo-results",result.pairs.length?result.pairs.map((r:{id:number;title:string;similarity:number})=>"#"+r.id+" "+r.title+" · сходство "+r.similarity):["Нет кандидатов: "+result.status]);}
+ else if(action==="digest")cogRows("evo-results",[result.title,"Источники: "+result.source_ids.join(", ")]);
+ text($("evo-message"),"Готово · без облачных запросов");
+ }catch(err){text($("evo-message"),String(err))}finally{evoBusy=false}}
+const evoId=()=>Number($<HTMLInputElement>("evo-id").value);
+$("evo-refresh").onclick=()=>void evoRun("");
+$("evo-panel").addEventListener("toggle",()=>{if($<HTMLDetailsElement>("evo-panel").open)void evoRun("")});
+$("evo-explore").onclick=()=>void evoRun("explore",{query:$<HTMLInputElement>("evo-query").value});
+$("evo-semantic").onclick=()=>void evoRun("semantic",{id:evoId()});
+$("evo-fact").onclick=()=>void evoRun("fact",{id:evoId(),state:$<HTMLSelectElement>("evo-state").value});
+$("evo-freshness").onclick=()=>void evoRun("freshness",{id:evoId(),days:Number($<HTMLInputElement>("evo-days").value)});
+$("evo-digest").onclick=()=>void evoRun("digest",{ids:$<HTMLInputElement>("evo-ids").value.split(",").map(x=>Number(x.trim()))});

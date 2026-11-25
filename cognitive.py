@@ -1,6 +1,7 @@
 """Local, bounded cognitive rules. No network, model calls or self-modifying code."""
 import hashlib
 import memory_engine as memory
+import evolution
 import json
 import logging
 import re
@@ -135,7 +136,9 @@ def cycle(path,force=False):
                 else: db.execute("UPDATE cog_goals SET state='done' WHERE code='review'")
                 if db.execute("SELECT 1 FROM cog_skills WHERE failures>0").fetchone(): db.execute("INSERT OR IGNORE INTO cog_goals(code,title) VALUES('errors','Разобрать неудачные операции и журнал')")
                 db.execute("UPDATE cog_state SET last_cycle=?,cycles=cycles+1,last_error='' WHERE id=1",(now(),))
-                if processed or to_index: emit(db,"cycle","Локальный цикл: %d объектов, %d мс"%(processed,round((time.monotonic()-started)*1000)))
+                if processed or to_index:
+                    emit(db,"cycle","Локальный цикл: %d объектов, %d мс"%(processed,round((time.monotonic()-started)*1000)))
+                    if memory.table(db,"evo_journal"): evolution.log(db,"cycle","Обработано %d объектов; индексировано %d"%(processed,len(to_index)))
                 # Bound activity log only; never delete knowledge, feedback or source records.
                 db.execute("DELETE FROM cog_events WHERE id < (SELECT COALESCE(MAX(id),0)-500 FROM cog_events)")
                 return {"processed":processed}
@@ -235,6 +238,7 @@ def lookup(path,q,record=False):
         results=memory.search(db,q,"Qwen/Qwen3-Embedding-0.6B")
         if record:
             with db:
+                if memory.table(db,"evo_journal"): evolution.log(db,"recall","Извлечено записей: %d"%len(results))
                 for r in results: db.execute("UPDATE cog_memory SET recall_count=recall_count+1 WHERE node_id=?",(r["id"],));emit(db,"recall","Извлечена локальная запись",r["id"])
         return {"results":results,"coverage":"Весь атлас; слова и доступные локальные векторы","missing":not bool(results),"intent":intent(q)}
 def dashboard(path,light=False):

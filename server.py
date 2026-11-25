@@ -3,6 +3,7 @@ import argparse
 import cloud_api
 import gateway
 import cognitive
+import evolution
 import memory_engine as memory
 import budget
 import logging
@@ -66,6 +67,7 @@ def initialize():
         db.execute("CREATE INDEX IF NOT EXISTS idx_nodes_folder ON nodes(folder)")
         db.execute("CREATE INDEX IF NOT EXISTS idx_nodes_created ON nodes(created_at)")
         cognitive.init(db)
+        evolution.init(db)
         db.execute("CREATE TABLE IF NOT EXISTS atlas_revision(id INTEGER PRIMARY KEY CHECK(id=1),version INTEGER NOT NULL)")
         db.execute("INSERT OR IGNORE INTO atlas_revision VALUES(1,0)")
         for table in ("nodes","edges","cog_relations","cog_aliases"):
@@ -520,6 +522,11 @@ class Handler(BaseHTTPRequestHandler):
         path=urlsplit(self.path).path
         if path=="/api/health":
             self.reply(200,{"app":"Amatsumireika","instance":self.server.instance,"ready":True})
+        elif path=="/api/evolution":
+            self.reply(200,evolution.report(DB))
+        elif path=="/api/evolution/page":
+            q=parse_qs(urlsplit(self.path).query)
+            self.reply(200,evolution.page(DB,int(q.get("after",["0"])[0]),int(q.get("limit",["200"])[0])))
         elif path=="/api/cognitive":
             self.reply(200,cognitive.dashboard(DB,parse_qs(urlsplit(self.path).query).get("light",["0"])[0]=="1"))
         elif path=="/api/cloud/settings":
@@ -580,6 +587,15 @@ class Handler(BaseHTTPRequestHandler):
             data=json.loads(self.rfile.read(n))
             if not isinstance(data,dict):
                 raise ValueError("Expected object")
+            if self.path.startswith("/api/evolution/"):
+                action=self.path.rsplit("/",1)[-1]
+                if action=="explore": result=evolution.explore(DB,data)
+                elif action=="fact": result=evolution.fact_state(DB,data)
+                elif action=="freshness": evolution.review_freshness(DB,data);result={"ok":True}
+                elif action=="digest": result=evolution.compress(DB,data)
+                elif action=="semantic": result=evolution.semantic_candidates(DB,data)
+                else: self.reply(404,{"error":"Not found"});return
+                self.reply(200,result);return
             if self.path.startswith("/api/cognitive/"):
                 action=self.path.rsplit("/",1)[-1]
                 if action=="cycle": cognitive.cycle(DB,True)
