@@ -50,14 +50,14 @@ async function main(){
   assert.equal(await evaluate('getComputedStyle(document.querySelector(".month-day.is-today"),"::before").borderTopStyle'),"solid");
   assert.ok(await evaluate('document.querySelector(".month-calendar").getBoundingClientRect().top-document.querySelector(".chrono-wheel").getBoundingClientRect().bottom>=23'),"calendar below wheel");
   assert.equal(await evaluate('document.querySelector("#spiral-tooltip").hidden'),true);
-  await evaluate('(()=>{const w=document.querySelector("#year-wheel"),r=w.getBoundingClientRect();w.dispatchEvent(new PointerEvent("pointermove",{clientX:r.left+r.width/2,clientY:r.top+r.height*(240-75)/480,bubbles:true}))})()');
+  await evaluate('(()=>{const w=document.querySelector("#year-wheel"),r=w.getBoundingClientRect();w.dispatchEvent(new PointerEvent("pointermove",{clientX:r.left+r.width/2,clientY:r.top+r.height*(260-75)/520,bubbles:true}))})()');
   assert.equal(await evaluate('document.querySelector("#spiral-tooltip").hidden'),false);
   await evaluate('document.querySelector("#year-wheel").dispatchEvent(new PointerEvent("pointerleave"))');
   assert.equal(await evaluate('document.querySelector("#spiral-tooltip").hidden'),true);
   assert.equal(await evaluate('document.querySelector("#left").dataset.timeDetail'),"year");
   const reset=()=>evaluate('document.querySelector("#month-grid").dispatchEvent(new KeyboardEvent("keydown",{key:"Home",bubbles:true}))');
   // December's radial label lies in the added gutter; click it to open month detail.
-  await evaluate(`(()=>{const w=document.querySelector("#year-wheel"),r=w.getBoundingClientRect(),y=new Date().getFullYear(),n=(Date.UTC(y+1,0,1)-Date.UTC(y,0,1))/86400000,a=-Math.PI/2-(n-15.5)*2*Math.PI/n;w.dispatchEvent(new PointerEvent("pointerup",{clientX:r.left+r.width*(.5+220*Math.cos(a)/480),clientY:r.top+r.height*(.5+220*Math.sin(a)/480),bubbles:true}))})()`);
+  await evaluate(`(()=>{const w=document.querySelector("#year-wheel"),r=w.getBoundingClientRect(),y=new Date().getFullYear(),n=(Date.UTC(y+1,0,1)-Date.UTC(y,0,1))/86400000,a=-Math.PI/2-(n-15.5)*2*Math.PI/n;w.dispatchEvent(new PointerEvent("pointerup",{clientX:r.left+r.width*(.5+240*Math.cos(a)/520),clientY:r.top+r.height*(.5+240*Math.sin(a)/520),bubbles:true}))})()`);
   assert.equal(await evaluate('document.querySelector("#left").dataset.timeDetail'),"month");
   assert.ok(await evaluate('document.querySelector("#month-heading").textContent.toLowerCase().includes("декабрь")'));
   await reset();
@@ -90,6 +90,8 @@ async function main(){
   await reset();
   assert.equal(await evaluate('document.querySelector("#month-heading").textContent'),oldHeading);
   assert.equal(await evaluate('document.querySelectorAll("#month-grid .is-selected.is-today").length'),1);
+  await evaluate('document.querySelector("#month-grid").dispatchEvent(new KeyboardEvent("keydown",{key:"ArrowRight",bubbles:true}))');
+  assert.equal(await evaluate('document.querySelectorAll("#month-grid .is-selected.is-today").length'),0);await reset();
   assert.equal(a.homeDetails,0);assert.equal(a.yearButtons,0);assert.equal(a.year,a.localYear);
   assert.ok(a.lit>80&&b.lit>80,"visible non-transparent pixels");
   assert.ok(b.frame>a.frame+3&&a.hash!==b.hash,"Canvas actually changes");
