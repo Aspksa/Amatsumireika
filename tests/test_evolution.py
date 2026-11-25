@@ -48,3 +48,12 @@ class EvolutionTest(unittest.TestCase):
         page=evolution.page(self.path,0,1)
         self.assertEqual(page["next"],a)
         self.assertEqual(evolution.page(self.path,a,1)["nodes"][0]["id"],b)
+
+    def test_quality_and_no_destructive_changes(self):
+        a=server.add_node("Первая запись","Знания")
+        b=server.add_node("Вторая запись","Знания")
+        evolution.compress(self.path,{"ids":[a,b]})
+        self.assertTrue(evolution.quality(self.path)["ok"])
+        with self.assertRaises(ValueError):evolution.compress(self.path,{"ids":[a,999999]})
+        self.assertEqual(len(evolution.report(self.path)["digests"]),1)
+        self.assertEqual(len(server.snapshot()["nodes"]),2)

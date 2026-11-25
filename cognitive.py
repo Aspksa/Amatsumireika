@@ -184,6 +184,7 @@ def review(path,data):
             db.execute("UPDATE cog_candidates SET state='approved' WHERE id=?",(ident,))
             if not existing: db.execute("INSERT INTO atlas_events(at,kind,detail) VALUES(?,?,?)",(now(),"node",c["title"]))
             emit(db,"memory","Кандидат принят пользователем",node)
+            if memory.table(db,"evo_journal"): evolution.log(db,"memory","Подтверждена запись #%d"%node)
 def relation(path,data):
     a,b,kind,action=data.get("source"),data.get("target"),data.get("kind"),data.get("action")
     if type(a) is not int or type(b) is not int or a==b or kind not in ("association","duplicate","cause") or action not in ("approve","reject"): raise ValueError("Invalid relation")
@@ -231,6 +232,7 @@ def feedback(path,data):
             if not db.execute("SELECT 1 FROM sqlite_master WHERE name='cloud_jobs'").fetchone() or not db.execute("SELECT 1 FROM cloud_jobs WHERE id=? AND status='done'",(job,)).fetchone(): raise ValueError("Unknown completed job")
             if db.execute("INSERT OR IGNORE INTO cog_feedback(at,job,helpful,note) VALUES(?,?,?,?)",(now(),job,int(helpful),note)).rowcount:
                 skill(db,"Оценка ответов",helpful);emit(db,"feedback","Пользователь оценил ответ")
+                if memory.table(db,"evo_journal"): evolution.log(db,"feedback","Ответ оценён: "+("полезно" if helpful else "не помогло"))
 def lookup(path,q,record=False):
     if not isinstance(q,str) or not q.strip() or len(q)>300: raise ValueError("Invalid query")
     with closing(connect(path)) as db:

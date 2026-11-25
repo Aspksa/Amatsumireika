@@ -522,6 +522,8 @@ class Handler(BaseHTTPRequestHandler):
         path=urlsplit(self.path).path
         if path=="/api/health":
             self.reply(200,{"app":"Amatsumireika","instance":self.server.instance,"ready":True})
+        elif path=="/api/evolution/quality":
+            self.reply(200,evolution.quality(DB))
         elif path=="/api/evolution":
             self.reply(200,evolution.report(DB))
         elif path=="/api/evolution/page":

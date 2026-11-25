@@ -68,6 +68,8 @@ def explore(path,data):
     with closing(connect(path)) as db,db:
         result=retrieve(db,q)
         log(db,"retrieve","Поиск: %d основных, %d связанных"%(len(result["seeds"]),len(result["linked"])))
+        for item in result["seeds"][:8]:
+            db.execute("INSERT INTO cog_events(at,kind,detail,node_id) VALUES(?,?,?,?)",(now(),"recall","Многоуровневый поиск",item["id"]))
         for item in result["seeds"]:
             db.execute("UPDATE cog_memory SET recall_count=recall_count+1 WHERE node_id=?",(item["id"],))
         return result
@@ -95,6 +97,7 @@ def fact_state(path,data):
         if current_state(db,node)!=state:
             db.execute("INSERT INTO evo_versions(node_id,at,state,note) VALUES(?,?,?,?)",(node,now(),state,note))
             log(db,"fact","Версия записи #%d: %s"%(node,state))
+            db.execute("INSERT INTO cog_events(at,kind,detail,node_id) VALUES(?,?,?,?)",(now(),"fact","Изменён статус версии",node))
         return {"id":node,"state":state}
 def review_freshness(path,data):
     node,days=data.get("id"),data.get("days")
@@ -153,3 +156,15 @@ def report(path):
                 "journal":[dict(r) for r in db.execute("SELECT * FROM evo_journal ORDER BY id DESC LIMIT 40")],
                 "skills":[dict(r) for r in db.execute("SELECT * FROM cog_skills ORDER BY name")],
                 "goals":[dict(r) for r in db.execute("SELECT * FROM cog_goals ORDER BY id LIMIT 20")]}
+
+def quality(path):
+    with closing(connect(path)) as db:
+        bad_links=db.execute("SELECT COUNT(*) FROM edges e LEFT JOIN nodes a ON a.id=e.source LEFT JOIN nodes b ON b.id=e.target WHERE a.id IS NULL OR b.id IS NULL OR e.source>=e.target").fetchone()[0]
+        bad_versions=db.execute("SELECT COUNT(*) FROM evo_versions v LEFT JOIN nodes n ON n.id=v.node_id WHERE n.id IS NULL").fetchone()[0]
+        bad_digests=0
+        for row in db.execute("SELECT source_ids FROM evo_digest"):
+            try:
+                ids=json.loads(row[0])
+                if not isinstance(ids,list) or not 2<=len(ids)<=12 or any(type(i) is not int for i in ids) or len(set(ids))!=len(ids) or any(not db.execute("SELECT 1 FROM nodes WHERE id=?",(i,)).fetchone() for i in ids):bad_digests+=1
+            except (ValueError,TypeError):bad_digests+=1
+        return {"checks":[{"name":"Целостность связей","issues":bad_links},{"name":"Источники версий","issues":bad_versions},{"name":"Источники сводок","issues":bad_digests}],"ok":not (bad_links or bad_versions or bad_digests)}
