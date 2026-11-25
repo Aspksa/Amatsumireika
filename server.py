@@ -2,6 +2,7 @@
 import argparse
 import cloud_api
 import gateway
+import cognitive
 import budget
 import logging
 import secrets
@@ -56,6 +57,7 @@ def initialize():
             db.execute("ALTER TABLE nodes ADD COLUMN created_at TEXT")
         db.execute("CREATE INDEX IF NOT EXISTS idx_nodes_folder ON nodes(folder)")
         db.execute("CREATE INDEX IF NOT EXISTS idx_nodes_created ON nodes(created_at)")
+        cognitive.init(db)
 
 def event(db, kind, detail):
     db.execute("INSERT INTO atlas_events(at,kind,detail) VALUES(?,?,?)",
@@ -383,7 +385,13 @@ def send_chat(content):
         append("user",content)
         command=content.casefold()
         if command=="/помощь":
-            append("system","Локальные команды: /статус — состояние базы и количество записей и связей. Языковая модель не подключена.")
+            append("system","Локальные команды: /статус, /найти текст, /план задача. Облачный ответ требует отдельного согласия.")
+        elif command.startswith("/план "):
+            result=cognitive.plan(content[6:]);append("system","Локальный план: "+"; ".join(result["steps"]))
+        elif command.startswith("/найти "):
+            # Reuse current connection to avoid a second writer while chat transaction is open.
+            q=cognitive.terms(content[7:]);matches=[r[0] for r in db.execute("SELECT title FROM nodes ORDER BY id DESC LIMIT 20000") if q & cognitive.terms(r[0])][:8]
+            append("system","Локальная память: "+("; ".join(matches) if matches else "Совпадений нет"))
         elif command=="/статус":
             count=db.execute("SELECT COUNT(*) FROM nodes").fetchone()[0]
             links=db.execute("SELECT COUNT(*) FROM edges").fetchone()[0]
@@ -486,6 +494,8 @@ class Handler(BaseHTTPRequestHandler):
         path=urlsplit(self.path).path
         if path=="/api/health":
             self.reply(200,{"app":"Amatsumireika","instance":self.server.instance,"ready":True})
+        elif path=="/api/cognitive":
+            self.reply(200,cognitive.dashboard(DB))
         elif path=="/api/cloud/settings":
             self.reply(200,cloud_api.state(DB))
         elif path=="/api/cloud/budget":
@@ -544,6 +554,21 @@ class Handler(BaseHTTPRequestHandler):
             data=json.loads(self.rfile.read(n))
             if not isinstance(data,dict):
                 raise ValueError("Expected object")
+            if self.path.startswith("/api/cognitive/"):
+                action=self.path.rsplit("/",1)[-1]
+                if action=="cycle": cognitive.cycle(DB,True)
+                elif action=="review": cognitive.review(DB,data)
+                elif action=="relation": cognitive.relation(DB,data)
+                elif action=="settings": cognitive.configure(DB,data)
+                elif action=="feedback": cognitive.feedback(DB,data)
+                elif action=="lookup":
+                    self.reply(200,cognitive.lookup(DB,data.get("query"),True));return
+                elif action=="plan":
+                    query=data.get("query")
+                    if not isinstance(query,str) or not 1<=len(query)<=3000: raise ValueError("Invalid query")
+                    self.reply(200,cognitive.plan(query));return
+                else: self.reply(404,{"error":"Not found"});return
+                self.reply(200,cognitive.dashboard(DB));return
             if self.path=="/api/cloud/embed-search":
                 self.reply(200,gateway.embed_search(DB,data))
                 return
@@ -617,7 +642,8 @@ def main():
             except Exception:
                 logging.exception("Browser launch failed; server remains available")
         try:
-            server.serve_forever()
+            with cognitive.worker(DB):
+                server.serve_forever()
         except KeyboardInterrupt:
             pass
 
