@@ -3,6 +3,10 @@ import argparse
 import math
 from datetime import datetime, timezone, date, timedelta
 import json
+import calendar
+from io import BytesIO
+from zipfile import ZipFile, ZIP_DEFLATED
+from xml.sax.saxutils import escape
 from urllib.request import urlopen
 from urllib.error import URLError
 from threading import Lock
@@ -10,7 +14,7 @@ import sqlite3
 import webbrowser
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, parse_qs
 from contextlib import closing
 
 ROOT = Path(__file__).resolve().parent
@@ -33,12 +37,20 @@ def initialize():
         db.execute("CREATE TABLE IF NOT EXISTS atlas_events(id INTEGER PRIMARY KEY, at TEXT NOT NULL, kind TEXT NOT NULL, detail TEXT NOT NULL)")
         db.execute("CREATE TABLE IF NOT EXISTS chat_messages(id INTEGER PRIMARY KEY, role TEXT NOT NULL CHECK(role IN ('user','system')), content TEXT NOT NULL, created_at TEXT NOT NULL)")
         db.execute("CREATE TABLE IF NOT EXISTS production_calendars(year INTEGER PRIMARY KEY, payload TEXT NOT NULL)")
+        db.executescript("""
+        CREATE TABLE IF NOT EXISTS work_profiles(id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, schedule TEXT NOT NULL, anchor TEXT NOT NULL, hours REAL NOT NULL);
+        CREATE TABLE IF NOT EXISTS work_days(profile_id INTEGER NOT NULL REFERENCES work_profiles(id), day TEXT NOT NULL, planned REAL, actual REAL, status TEXT NOT NULL, PRIMARY KEY(profile_id,day));
+        CREATE TABLE IF NOT EXISTS time_snapshots(id INTEGER PRIMARY KEY, at TEXT NOT NULL, day TEXT NOT NULL, payload TEXT NOT NULL);
+        """)
+        db.execute("CREATE INDEX IF NOT EXISTS idx_events_at ON atlas_events(at)")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_chat_created ON chat_messages(created_at)")
         columns = {r[1] for r in db.execute("PRAGMA table_info(nodes)")}
         if "folder" not in columns:
             db.execute("ALTER TABLE nodes ADD COLUMN folder TEXT NOT NULL DEFAULT ''")
         if "created_at" not in columns:
             db.execute("ALTER TABLE nodes ADD COLUMN created_at TEXT")
         db.execute("CREATE INDEX IF NOT EXISTS idx_nodes_folder ON nodes(folder)")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_nodes_created ON nodes(created_at)")
 
 def event(db, kind, detail):
     db.execute("INSERT INTO atlas_events(at,kind,detail) VALUES(?,?,?)",
@@ -129,6 +141,166 @@ def refresh_calendars():
         return {**get_calendars(),"status":"Обновление не принято · локальные данные сохранены"}
     finally:
         CALENDAR_LOCK.release()
+
+# Local time ledger. Plan differences are not a legal determination of overtime.
+def iso_day(value):
+    if not isinstance(value,str) or len(value)!=10:
+        raise ValueError("Invalid date")
+    d=date.fromisoformat(value)
+    if d.isoformat()!=value or not 2026<=d.year<=2100:
+        raise ValueError("Date outside supported range")
+    return d
+
+def work_month(value):
+    if not isinstance(value,str) or len(value)!=7:
+        raise ValueError("Invalid month")
+    return iso_day(value+"-01")
+
+def hour_value(value,nullable=False):
+    if value is None and nullable:
+        return None
+    if type(value) not in (int,float) or not math.isfinite(value) or not 0<=value<=24:
+        raise ValueError("Hours must be between 0 and 24")
+    return round(value,2)
+
+def get_profiles():
+    with closing(connect()) as db:
+        return [dict(id=i,name=n,schedule=s,anchor=a,hours=h) for i,n,s,a,h in db.execute("SELECT id,name,schedule,anchor,hours FROM work_profiles ORDER BY id")]
+
+def save_profile(data):
+    name=data.get("name")
+    if not isinstance(name,str) or not name.strip() or len(name.strip())>100 or any(ord(c)<32 for c in name):
+        raise ValueError("Invalid employee name")
+    schedule=data.get("schedule")
+    if schedule not in ("5/2","6/1","2/2","shift"):
+        raise ValueError("Invalid schedule")
+    anchor=iso_day(data.get("anchor")).isoformat()
+    hours=hour_value(data.get("hours"))
+    if hours==0:
+        raise ValueError("Positive shift duration required")
+    with closing(connect()) as db,db:
+        db.execute("BEGIN IMMEDIATE")
+        if db.execute("SELECT COUNT(*) FROM work_profiles").fetchone()[0]>=200:
+            raise ValueError("Local ledger supports up to 200 employees")
+        db.execute("INSERT INTO work_profiles(name,schedule,anchor,hours) VALUES(?,?,?,?)",(name.strip(),schedule,anchor,hours))
+    return get_profiles()
+
+def save_work_day(data):
+    pid=data.get("profile_id")
+    if type(pid) is not int or pid<1:
+        raise ValueError("Invalid employee")
+    day=iso_day(data.get("day")).isoformat()
+    status=data.get("status","normal")
+    if status not in ("normal","leave","sick","trip","off"):
+        raise ValueError("Invalid status")
+    planned=hour_value(data.get("planned"),True)
+    actual=hour_value(data.get("actual"),True)
+    with closing(connect()) as db,db:
+        if not db.execute("SELECT 1 FROM work_profiles WHERE id=?",(pid,)).fetchone():
+            raise ValueError("Employee not found")
+        db.execute("INSERT INTO work_days VALUES(?,?,?,?,?) ON CONFLICT(profile_id,day) DO UPDATE SET planned=excluded.planned,actual=excluded.actual,status=excluded.status",(pid,day,planned,actual,status))
+    return work_report(day[:7])
+
+def planned_hours(d,profile,rules):
+    schedule=profile["schedule"]; h=profile["hours"]
+    if schedule=="shift":
+        return None
+    if schedule=="2/2":
+        return h if (d-date.fromisoformat(profile["anchor"])).days%4<2 else 0
+    rule=rules.get(d.year)
+    if schedule=="6/1":
+        # Personal weekly pattern, NOT a certified six-day production calendar.
+        return h if d.weekday()<6 and d.strftime("%m-%d") not in HOLIDAYS else 0
+    if not rule:
+        return None
+    k=d.strftime("%m-%d")
+    if k in HOLIDAYS or k in rule["rest"]:
+        return 0
+    if k in rule["short"]:
+        return max(0,h-1)
+    return h if d.weekday()<5 or k in rule["work"] else 0
+
+def work_report(value):
+    start=work_month(value)
+    days=calendar.monthrange(start.year,start.month)[1]
+    profiles=get_profiles()
+    with closing(connect()) as db:
+        rules={r["year"]:r for r in (json.loads(p[0]) for p in db.execute("SELECT payload FROM production_calendars"))}
+        overrides={(p,d):(pl,ac,st) for p,d,pl,ac,st in db.execute("SELECT profile_id,day,planned,actual,status FROM work_days WHERE day>=? AND day<=?",(start.isoformat(),start.replace(day=days).isoformat()))}
+    rows=[]; summary=[]
+    for p in profiles:
+        planned=actual=delta=0; unknown=missing=0
+        for n in range(1,days+1):
+            d=start.replace(day=n); k=d.isoformat()
+            pl,ac,st=overrides.get((p["id"],k),(None,None,"normal"))
+            override=pl
+            if pl is None:
+                pl=0 if st in ("leave","sick","off") else planned_hours(d,p,rules)
+            diff=round(ac-pl,2) if ac is not None and pl is not None else None
+            rows.append(dict(profile_id=p["id"],name=p["name"],day=k,planned=pl,override=override,actual=ac,status=st,difference=diff))
+            if pl is None: unknown+=1
+            else: planned+=pl
+            if ac is None: missing+=1
+            else: actual+=ac
+            if diff is not None: delta+=diff
+        summary.append(dict(profile_id=p["id"],name=p["name"],planned=round(planned,2),actual=round(actual,2),difference=round(delta,2),unknown=unknown,missing=missing))
+    return dict(month=value,profiles=profiles,rows=rows,summary=summary)
+
+def report_xlsx(value):
+    report=work_report(value)
+    # Minimal OpenXML workbook; all user strings are inline text, never formulas.
+    def cell(v):
+        if v is None: return "<c/>"
+        if isinstance(v,(int,float)): return f"<c><v>{v}</v></c>"
+        return '<c t="inlineStr"><is><t xml:space="preserve">'+escape(str(v))+'</t></is></c>'
+    data=[["Сотрудник","Дата","План, ч","Факт, ч","Статус","Факт минус план, ч"]]
+    names={"normal":"Обычный","leave":"Отпуск","sick":"Больничный","trip":"Командировка","off":"Выходной"}
+    for r in report["rows"]:
+        data.append([r["name"],r["day"],r["planned"],r["actual"],names[r["status"]],r["difference"]])
+    xml=''.join('<row r="%s">%s</row>'%(i+1,''.join(cell(v) for v in row)) for i,row in enumerate(data))
+    output=BytesIO()
+    with ZipFile(output,"w",ZIP_DEFLATED) as z:
+        z.writestr("[Content_Types].xml",'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>')
+        z.writestr("_rels/.rels",'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>')
+        z.writestr("xl/workbook.xml",'<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Табель" sheetId="1" r:id="rId1"/></sheets></workbook>')
+        z.writestr("xl/_rels/workbook.xml.rels",'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>')
+        z.writestr("xl/worksheets/sheet1.xml",'<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>'+xml+'</sheetData></worksheet>')
+    return output.getvalue()
+
+def timeline_window(start,end):
+    # UTC ISO bounds supplied from local-day/month boundaries in the browser.
+    def bound(s):
+        if not isinstance(s,str) or len(s)>40:
+            raise ValueError("Invalid time")
+        d=datetime.fromisoformat(s.replace("Z","+00:00"))
+        if d.tzinfo is None:
+            raise ValueError("Timezone required")
+        return d.astimezone(timezone.utc)
+    a,b=bound(start),bound(end)
+    if not 0<(b-a).total_seconds()<=370*86400:
+        raise ValueError("Invalid timeline window")
+    low,high=a.isoformat(),b.isoformat()
+    with closing(connect()) as db:
+        # All existing timestamps are UTC ISO strings; no contents of private chats are returned.
+        nodes=[dict(id=i,title=t,category=c,at=at) for i,t,c,at in db.execute("SELECT id,title,category,created_at FROM nodes WHERE created_at>=? AND created_at<? ORDER BY created_at,id LIMIT 500",(low,high))]
+        events=[dict(at=a,kind=k,detail=d) for a,k,d in db.execute("SELECT at,kind,detail FROM atlas_events WHERE at>=? AND at<? ORDER BY at,id LIMIT 500",(low,high))]
+        chats=[dict(at=a,kind="chat",detail="Сообщение пользователя") for a, in db.execute("SELECT created_at FROM chat_messages WHERE role='user' AND created_at>=? AND created_at<? ORDER BY created_at,id LIMIT 500",(low,high))]
+        counts=dict(nodes=db.execute("SELECT COUNT(*) FROM nodes WHERE created_at>=? AND created_at<?",(low,high)).fetchone()[0],events=db.execute("SELECT COUNT(*) FROM atlas_events WHERE at>=? AND at<?",(low,high)).fetchone()[0],chats=db.execute("SELECT COUNT(*) FROM chat_messages WHERE role='user' AND created_at>=? AND created_at<?",(low,high)).fetchone()[0])
+    return dict(nodes=nodes,events=events,chats=chats,counts=counts)
+
+def save_time_snapshot(data):
+    day=iso_day(data.get("day")).isoformat()
+    mode=data.get("mode")
+    if mode not in ("spiral","dna","galaxy","sphere","crystal","fabric","years","projection"):
+        raise ValueError("Invalid mode")
+    with closing(connect()) as db,db:
+        payload={"mode":mode,"nodes":db.execute("SELECT COUNT(*) FROM nodes").fetchone()[0],"edges":db.execute("SELECT COUNT(*) FROM edges").fetchone()[0]}
+        db.execute("INSERT INTO time_snapshots(at,day,payload) VALUES(?,?,?)",(datetime.now(timezone.utc).isoformat(),day,json.dumps(payload)))
+    return get_time_snapshots()
+
+def get_time_snapshots():
+    with closing(connect()) as db:
+        return [dict(id=i,at=a,day=d,**json.loads(p)) for i,a,d,p in db.execute("SELECT id,at,day,payload FROM time_snapshots ORDER BY id DESC LIMIT 100")]
 
 def get_settings():
     with closing(connect()) as db:
@@ -239,6 +411,23 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(200,snapshot())
         elif path=="/api/calendar":
             self.reply(200,get_calendars())
+        elif path in ("/api/work/profiles","/api/work/report","/api/work/export","/api/time/window","/api/time/snapshots"):
+            query=parse_qs(urlsplit(self.path).query)
+            try:
+                if path=="/api/work/profiles":
+                    self.reply(200,get_profiles())
+                elif path=="/api/work/report":
+                    self.reply(200,work_report(query.get("month",[""])[0]))
+                elif path=="/api/work/export":
+                    self.reply(200,report_xlsx(query.get("month",[""])[0]),"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                elif path=="/api/time/window":
+                    self.reply(200,timeline_window(query.get("start",[""])[0],query.get("end",[""])[0]))
+                else:
+                    self.reply(200,get_time_snapshots())
+            except (ValueError,TypeError):
+                self.reply(400,{"error":"Invalid parameters"})
+            except sqlite3.Error:
+                self.reply(503,{"error":"Database unavailable"})
         elif path=="/api/chat":
             self.reply(200,get_chat())
         elif path=="/api/settings":
@@ -267,6 +456,15 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError("Expected object")
             if self.path=="/api/calendar/refresh":
                 self.reply(200,refresh_calendars())
+                return
+            if self.path=="/api/work/profiles":
+                self.reply(200,save_profile(data))
+                return
+            if self.path=="/api/work/day":
+                self.reply(200,save_work_day(data))
+                return
+            if self.path=="/api/time/snapshots":
+                self.reply(200,save_time_snapshot(data))
                 return
             if self.path=="/api/chat":
                 self.reply(200,send_chat(data.get("content")))
