@@ -275,3 +275,13 @@ main:not(.expanded) #left{justify-content:flex-start;align-items:stretch;padding
 #month-today{display:block;margin:6px auto 0;background:transparent;border:0;color:var(--accent);font-size:12px}
 :root.paper .month-day.is-today{color:#80550f;border-color:#80550f}
 :root.paper .month-day.is-selected{background:#80550f;color:#fff6e5;border-color:#80550f}
+
+/* Imperial time — warm metal on obsidian, semantic gold and platinum. */
+#left .chrono-wheel{background:radial-gradient(circle at 50% 50%,#b18d4420 0,transparent 44%)}
+.chrono-legend .work{--day-color:#d9af61}.chrono-legend .weekend{--day-color:#b4bec9}.chrono-legend .holiday{--day-color:#ffe5a2}.chrono-legend .short{--day-color:#bc8254}
+:root.paper .chrono-legend .work{--day-color:#956510}:root.paper .chrono-legend .weekend{--day-color:#586779}:root.paper .chrono-legend .holiday{--day-color:#78500a}:root.paper .chrono-legend .short{--day-color:#955039}
+#left .month-day.is-selected{box-shadow:inset 0 1px 0 #fff1ca70}
+#left.chrono-month-transition #year-wheel,#left.chrono-month-transition #time-overlay,#left.chrono-month-transition #month-grid{animation:chronoMonthReveal .32s ease-out both}
+@keyframes chronoMonthReveal{from{opacity:.24}to{opacity:1}}
+#left[data-cinema="off"] #year-wheel,#left[data-cinema="off"] #time-overlay,#left[data-cinema="off"] #month-grid{animation:none}
+@media(prefers-reduced-motion:reduce){#left.chrono-month-transition #year-wheel,#left.chrono-month-transition #time-overlay,#left.chrono-month-transition #month-grid{animation:none}}

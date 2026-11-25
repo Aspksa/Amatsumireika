@@ -280,8 +280,8 @@ const productionRules:Record<number,ProductionRule>={
  2027:{rest:["02-22","05-03","05-10","06-14","11-05","12-31"],short:["02-20","04-30","06-11","11-03"]}
 };
 const officialHolidays=new Set(["01-01","01-02","01-03","01-04","01-05","01-06","01-07","01-08","02-23","03-08","05-01","05-09","06-12","11-04"]);
-const dayColors:Record<DayType,string>={work:"#57e4c8",weekend:"#91a7cf",holiday:"#ffd17a",short:"#ffa48f",transfer:"#91a7cf"};
-const paperDayColors:Record<DayType,string>={work:"#187662",weekend:"#49658a",holiday:"#8e5f13",short:"#a74435",transfer:"#49658a"};
+const dayColors:Record<DayType,string>={work:"#d9af61",weekend:"#b4bec9",holiday:"#ffe5a2",short:"#bc8254",transfer:"#b4bec9"};
+const paperDayColors:Record<DayType,string>={work:"#956510",weekend:"#586779",holiday:"#78500a",short:"#955039",transfer:"#586779"};
 function dayPaint(type:DayType){return (paper()?paperDayColors:dayColors)[type]}
 const dayNames:Record<DayType,string>={work:"Рабочий день · 8 ч",weekend:"Выходной",holiday:"Праздник",short:"Сокращённый день · 7 ч",transfer:"Перенесённый выходной"};
 const monthNames=["Янв","Фев","Мар","Апр","Май","Июн","Июл","Авг","Сен","Окт","Ноя","Дек"];
@@ -375,7 +375,7 @@ function cinemaYearTransition(c:CanvasRenderingContext2D,now:number,power:number
 function cinemaWave(c:CanvasRenderingContext2D,now:number,at:number,duration:number,col:string,from:number,to:number,power:number){const t=(now-at)/duration;if(t<0||t>=1)return;cinemaRing(c,from+(to-from)*eased(t),0,tau,col,1.1+2*(1-t),Math.sin(Math.PI*t)*power)}
 function cinemaDraw(c:CanvasRenderingContext2D,now:number,d:Date,dt:number,budget:ReturnType<typeof cinemaBudget>){
  const sec=d.getSeconds()+d.getMilliseconds()/1000,min=d.getMinutes()+sec/60,hr=d.getHours()%12+min/60;
- const gold=paper()?"#80550f":"#ffd17a",light=paper()?"#49658a":"#fff0c8",muted=paper()?"#a58d62":"#a9854b";
+ const gold=paper()?"#80550f":"#ffd17a",light=paper()?"#586779":"#f5eee1",muted=paper()?"#a58d62":"#a9854b";
  const a=-Math.PI/2+tau*sec/60;
  cinemaRing(c,69,-Math.PI/2,a,gold,1.5);
  cinemaRing(c,65,-Math.PI/2,-Math.PI/2+tau*min/60,light,.8,.85);
@@ -435,40 +435,74 @@ function cinemaSettings(){
 }
 function viewDates(y:number){const all=yearDates(y);return detailMonth===null?all:all.filter(d=>d.getMonth()===detailMonth)}
 function elapsedProduction(year:number,now:Date){const dates=yearDates(year),total=productionStats(dates);if(!total)return null;const past=dates.filter(d=>dayKey(d)<dayKey(now)),done=past.length?productionStats(past):{work:0,h40:0};return done?{remaining:total.work-done.work,doneHours:done.h40}:null}
-function rayLength(i:number,n:number){return 4+62*Math.pow((i+1)/n,2.35)}
+function rayLength(i:number,n:number){return 4+50*Math.pow((i+1)/n,2.35)}
 function eased(t:number){t=Math.max(0,Math.min(1,t));return t*t*(3-2*t)}
 function mixHex(a:string,b:string,t:number){const x=parseInt(a.slice(1),16),y=parseInt(b.slice(1),16);return "#"+[16,8,0].map(k=>Math.round(((x>>k)&255)*(1-t)+((y>>k)&255)*t).toString(16).padStart(2,"0")).join("")}
 function animateBirth(now:Date){birthAt=performance.now();birthKey=dayKey(now);if(!cinemaMotion()||calendarAnim||!cinemaOnscreen())return;calendarAnim=true;const tick=()=>{drawYear(new Date());if(performance.now()-birthAt<1400&&cinemaMotion()&&cinemaOnscreen())requestAnimationFrame(tick);else calendarAnim=false};requestAnimationFrame(tick)}
 const wheel=$<HTMLCanvasElement>("year-wheel"),wheelCtx=wheel.getContext("2d")!;
 function displayedYear(now:Date){return autoYear?now.getFullYear():calendarYear}
 function elapsedDays(year:number,now:Date){const key=dayKey(now);return yearDates(year).filter(d=>dayKey(d)<=key).length}
+// ISO week numbers, calculated in UTC from local calendar fields to avoid DST drift.
+function isoWeek(d:Date){const t=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));t.setUTCDate(t.getUTCDate()+4-(t.getUTCDay()||7));const start=Date.UTC(t.getUTCFullYear(),0,1);return Math.ceil(((t.getTime()-start)/86400000+1)/7)}
+function radialLabel(c:CanvasRenderingContext2D,label:string,a:number,r:number,color:string,font:string,width:number){
+ const p=timePoint(a,r),flip=Math.cos(a)<0;
+ c.save();c.translate(p.x,p.y);c.rotate(a+(flip?Math.PI:0));c.textAlign=flip?"right":"left";c.textBaseline="middle";c.fillStyle=color;c.font=font;c.fillText(label,0,0,width);c.restore();
+}
+function metalRay(c:CanvasRenderingContext2D,p:Point,q:Point,col:string,dark:boolean,passed:boolean,width:number){
+ const grad=c.createLinearGradient(p.x,p.y,q.x,q.y);
+ grad.addColorStop(0,mixHex(col,dark?"#4c321b":"#a39480",.45));
+ grad.addColorStop(.36,col);
+ grad.addColorStop(.70,mixHex(col,dark?"#fff3d1":"#f0d7a1",.48));
+ grad.addColorStop(.78,col);
+ grad.addColorStop(1,mixHex(col,dark?"#fff3d1":"#78500a",.25));
+ c.globalAlpha=passed?1:.35;c.strokeStyle=grad;c.lineWidth=width;c.beginPath();c.moveTo(p.x,p.y);c.lineTo(q.x,q.y);c.stroke();c.globalAlpha=1;
+}
+function animateMonthSwitch(){
+ const root=$("left");root.classList.remove("chrono-month-transition");
+ if(!cinemaMotion()||!cinemaOnscreen())return;
+ void root.offsetWidth;root.classList.add("chrono-month-transition");
+}
 function drawYear(now=new Date()){
  const y=displayedYear(now),days=viewDates(y),today=dayKey(timeReference(now)),selected=daySelected;const elapsed=performance.now()-birthAt,birth=cinemaMotion()&&elapsed>=0&&elapsed<1400;
  const box=wheel.getBoundingClientRect();const side=Math.max(1,Math.min(box.width,box.height));if(side<=1)return;
  const size=Math.max(1,Math.round(side*Math.min(devicePixelRatio||1,2)));if(wheel.width!==size)wheel.width=size;if(wheel.height!==size)wheel.height=size;
  const c=wheelCtx;c.setTransform(size/320,0,0,size/320,0,0);c.clearRect(0,0,320,320);
  const center=160,inner=spiralInner,step=tau/days.length;
- const dark=!paper(),base=dark?"#415b6a":"#9ca9aa",ink=dark?"#c2d0d9":"#344955",gold=dark?"#ffd17a":"#80550f";
+ const dark=!paper(),base=dark?"#79664b":"#9b8a70",ink=dark?"#e8e1d2":"#3e362b",gold=dark?"#ffd17a":"#80550f";
  const point=(angle:number,r:number)=>({x:center+Math.cos(angle)*r,y:center+Math.sin(angle)*r});
  function stroke(a:number,b:number,r:number,color:string,w:number){c.beginPath();c.arc(center,center,r,a,b);c.strokeStyle=color;c.lineWidth=w;c.stroke()}
  const ends:Point[]=[];
  stroke(0,tau,inner-4,base,.8);stroke(0,tau,inner-10,base,.5);
- for(const radius of [96,118,140]){c.globalAlpha=.26;stroke(0,tau,radius,base,.5)}c.globalAlpha=1;
+ for(const radius of [96,118,135]){c.globalAlpha=.26;stroke(0,tau,radius,base,.5)}c.globalAlpha=1;
  stroke(0,tau,inner-1,dark?"#142631":"#e4e0d6",2.3);
  for(let i=0;i<60;i++){const angle=-Math.PI/2+i*tau/60,p=point(angle,inner-9),q=point(angle,inner-(i%5===0?15:12));c.beginPath();c.moveTo(p.x,p.y);c.lineTo(q.x,q.y);c.strokeStyle=i%5===0?gold:base;c.lineWidth=i%5===0?1:.6;c.stroke()}
  for(let i=0;i<days.length;i++){
   const d=days[i],key=dayKey(d),type=productionDay(d),angle=spiralAngle(i,days.length),passed=key<=today;
   // Ray height grows with the ordinal day; a new ray is filled at local midnight.
-  const length=rayLength(i,days.length)*(birth&&key===birthKey?eased(elapsed/800):1),tip=inner+length,p=point(angle,inner),q=point(angle,tip);const col=type?dayPaint(type):base;ends.push(q);const prevType=i>0?productionDay(days[i-1]):type;const blended=mixHex(col,prevType?dayPaint(prevType):col,.12);
-  c.globalAlpha=passed?1:.36;c.strokeStyle=mixHex(col,base,.08);c.lineWidth=detailMonth===null?1.05:4.2;c.beginPath();c.moveTo(p.x,p.y);c.lineTo(q.x,q.y);c.stroke();
-  const mid=point(angle,inner+length*.48);c.strokeStyle=mixHex(blended,gold,.05);c.lineWidth=detailMonth===null?.78:3.2;c.beginPath();c.moveTo(mid.x,mid.y);c.lineTo(q.x,q.y);c.stroke();c.globalAlpha=1;
-  if(d.getDay()===1&&detailMonth===null){const p1=point(angle,tip+2),p2=point(angle,tip+5);cinemaLine(c,p1,p2,gold,.65,.65)}
-  if(timeDayCounts.has(key)){const z=point(angle,tip+5);c.fillStyle="#bfa0e8";c.beginPath();c.arc(z.x,z.y,Math.min(2.5,.8+Math.log2(1+(timeDayCounts.get(key)??0))*.25),0,tau);c.fill()}
+  const length=rayLength(i,days.length)*(birth&&key===birthKey?Math.max(.02,eased(elapsed/800)):1),tip=inner+length,p=point(angle,inner),q=point(angle,tip);const col=type?dayPaint(type):base;ends.push(q);
+  metalRay(c,p,q,col,dark,passed,detailMonth===null?1.08:4.4);
+  if(detailMonth===null&&d.getDay()===1){
+   const week=isoWeek(d),major=week===1||week%4===0;
+   cinemaLine(c,point(angle,132),point(angle,major?138:135),major?gold:base,major?1.1:.65,.9);
+   if(major){const w=point(angle,141);c.font="6.5px "+mono;c.fillStyle=ink;c.textAlign="center";c.textBaseline="middle";c.fillText(String(week),w.x,w.y)}
+   if(!major&&key!==selected&&key!==today)radialLabel(c,String(d.getDate()).padStart(2,"0"),angle,tip+6,ink,"7px "+mono,Math.max(5,129-tip-6));
+  }
+  if(timeDayCounts.has(key)){const z=point(angle,tip+3);c.fillStyle=dark?"#e9e1d5":"#6c6354";c.beginPath();c.arc(z.x,z.y,Math.min(2.5,.8+Math.log2(1+(timeDayCounts.get(key)??0))*.25),0,tau);c.fill()}
   if(key===today||key===selected){const k=point(angle,tip+3);if(key===today){c.globalAlpha=.13;c.fillStyle=gold;c.beginPath();c.arc(k.x,k.y,7,0,tau);c.fill();c.globalAlpha=1;stroke(angle-step*.65,angle+step*.65,tip+3,gold,1.7)}c.beginPath();c.arc(k.x,k.y,key===today?2.5:1.6,0,tau);c.fillStyle=key===today?gold:ink;c.fill()}
   if(detailMonth===null&&d.getDate()===1){const p1=point(angle+step/2,inner-1),p2=point(angle+step/2,tip+1);c.strokeStyle=base;c.lineWidth=.7;c.beginPath();c.moveTo(p1.x,p1.y);c.lineTo(p2.x,p2.y);c.stroke()}
  }
  for(let i=1;i<ends.length;i++)cinemaLine(c,ends[i-1],ends[i],gold,.7,dayKey(days[i])<=today?.75:.26);
- if(detailMonth===null){for(let m=0;m<12;m++){const first=days.findIndex(d=>d.getMonth()===m),n=new Date(y,m+1,0).getDate(),angle=-Math.PI/2-(first+n/2)*step,p=point(angle,148);const current=now.getFullYear()===y&&now.getMonth()===m;c.font=(current?"bold ":"")+"10px "+mono;c.textAlign="center";c.textBaseline="middle";c.fillStyle=current?gold:ink;c.fillText(monthNames[m],p.x,p.y)}}else{for(let i=0;i<days.length;i++){const a=spiralAngle(i,days.length),p=point(a,149);c.font="9px "+mono;c.textAlign="center";c.textBaseline="middle";c.fillStyle=dayKey(days[i])===today?gold:ink;c.fillText(String(i+1),p.x,p.y)}}
+ if(detailMonth===null){
+  for(let m=0;m<12;m++){
+   const first=days.findIndex(d=>d.getMonth()===m),n=new Date(y,m+1,0).getDate(),a=-Math.PI/2-(first+n/2)*step,current=now.getFullYear()===y&&now.getMonth()===m;
+   // Radial month captions occupy their own outer track; their anchors are separate from week marks.
+   radialLabel(c,monthNames[m].toUpperCase(),a,144,current?gold:ink,(current?"bold ":"")+"9px "+mono,14);
+  }
+  const idx=days.findIndex(d=>dayKey(d)===selected);
+  if(idx>=0){const d=days[idx],a=spiralAngle(idx,days.length),tip=inner+rayLength(idx,days.length);radialLabel(c,String(d.getDate()).padStart(2,"0"),a,tip+5,gold,"bold 9px "+mono,Math.max(5,132-tip-5))}
+ }else{
+  for(let i=0;i<days.length;i++){const a=spiralAngle(i,days.length),tip=inner+rayLength(i,days.length),key=dayKey(days[i]);radialLabel(c,String(i+1).padStart(2,"0"),a,tip+5,key===today||key===selected?gold:ink,(key===today||key===selected?"bold ":"")+"10px "+mono,Math.min(20,155-tip-5))}
+ }
  const progress=days.filter(d=>dayKey(d)<=today).length/days.length;stroke(-Math.PI/2-progress*tau,-Math.PI/2,inner-1,gold,1.1);if(birth&&days.some(d=>dayKey(d)===birthKey)){c.globalAlpha=(1-elapsed/1400)*.55;stroke(0,tau,inner+72*eased(elapsed/1400),gold,1.6);c.globalAlpha=1}
 }
 // Monday-first month layout. Always six weeks, with empty leading/trailing slots.
@@ -479,7 +513,7 @@ function monthCells(year:number,m:number):(Date|null)[]{
 function selectMonthDate(d:Date,now=new Date()){
  if(d.getFullYear()<2026||d.getFullYear()>2100)return;
  playbackRunning=false;playbackSerial++;historyDate=null;calendarYear=d.getFullYear();autoYear=calendarYear===now.getFullYear();
- if(detailMonth!==null)detailMonth=d.getMonth();daySelected=dayKey(d);renderCalendar(now);
+ if(detailMonth!==null)detailMonth=d.getMonth();const changed=month.getMonth()!==d.getMonth()||month.getFullYear()!==d.getFullYear();daySelected=dayKey(d);renderCalendar(now);if(changed)animateMonthSwitch();
 }
 function moveMonth(offset:number,now=new Date()){
  const d=new Date(month.getFullYear(),month.getMonth()+offset,1,12);
@@ -524,8 +558,8 @@ function renderCalendar(now=new Date()){
 function chooseCalendarYear(year:number|null,now=new Date()){const prior=displayedYear(now);if(prior!==(year??now.getFullYear())){cinemaYearAt=performance.now();cinemaPreviousYear=prior;wakeCinema()}historyDate=null;detailMonth=null;autoYear=year===null;calendarYear=year??now.getFullYear();daySelected=calendarYear===now.getFullYear()?dayKey(now):dayKey(new Date(calendarYear,0,1,12));renderCalendar(now)}
 $("today").onclick=()=>chooseCalendarYear(null);
 $<HTMLInputElement>("selected-date").onchange=e=>{const value=(e.target as HTMLInputElement).value;if(!/^\d{4}-\d{2}-\d{2}$/.test(value))return;const d=new Date(value+"T12:00:00");if(dayKey(d)!==value||d.getFullYear()!==displayedYear(new Date()))return;calendarYear=d.getFullYear();autoYear=calendarYear===new Date().getFullYear();detailMonth=null;daySelected=value;renderCalendar()};
-function openCalendarMonth(m:number,now=new Date()){if(m<0||m>11)return;cinemaRevealAt=performance.now();wakeCinema();detailMonth=m;const y=displayedYear(now);if(daySelected.slice(0,7)!==dayKey(new Date(y,m,1)).slice(0,7))daySelected=dayKey(new Date(y,m,1,12));renderCalendar(now)}
-function closeCalendarMonth(now=new Date()){cinemaRevealAt=performance.now();wakeCinema();detailMonth=null;renderCalendar(now)}
+function openCalendarMonth(m:number,now=new Date()){if(m<0||m>11)return;cinemaRevealAt=performance.now();wakeCinema();detailMonth=m;const y=displayedYear(now);if(daySelected.slice(0,7)!==dayKey(new Date(y,m,1)).slice(0,7))daySelected=dayKey(new Date(y,m,1,12));renderCalendar(now);animateMonthSwitch()}
+function closeCalendarMonth(now=new Date()){cinemaRevealAt=performance.now();wakeCinema();detailMonth=null;renderCalendar(now);animateMonthSwitch()}
 $("chrono-back").onclick=()=>closeCalendarMonth();
 $("prod-month").onclick=()=>openCalendarMonth(month.getMonth());
 wheel.addEventListener("pointerup",e=>{const rect=wheel.getBoundingClientRect();if(!rect.width||!rect.height)return;const x=(e.clientX-rect.left)/rect.width*320-160,y=(e.clientY-rect.top)/rect.height*320-160,r=Math.hypot(x,y);if(r<spiralInner-2||r>160)return;const days=viewDates(displayedYear(new Date())),d=days[spiralIndex(x,y,days.length)];if(detailMonth===null&&r>=142){openCalendarMonth(d.getMonth());return}daySelected=dayKey(d);renderCalendar()});

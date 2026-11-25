@@ -38,6 +38,11 @@ async function main(){
   assert.equal(await evaluate('document.querySelector("#clock-weekday").textContent'),await evaluate('new Date().toLocaleDateString("ru-RU",{weekday:"long"})'));
   assert.equal(await evaluate('document.querySelector("#clock-date").textContent'),await evaluate('new Date().toLocaleDateString("ru-RU",{day:"numeric",month:"long"})'));
   assert.equal(await evaluate('document.querySelector("#month-grid").children.length'),42);
+  assert.equal(await evaluate('getComputedStyle(document.querySelector(".chrono-legend .work")).getPropertyValue("--day-color").trim()'),"#d9af61");
+  await evaluate('document.querySelector("#prod-month").click()');
+  assert.equal(await evaluate('document.querySelector("#chrono-back").hidden'),false);
+  await evaluate('document.querySelector("#chrono-back").click()');
+  assert.equal(await evaluate('document.querySelector("#chrono-back").hidden'),true);
   assert.equal(await evaluate('document.querySelectorAll("#month-grid .is-today").length'),1);
   const oldHeading=await evaluate('document.querySelector("#month-heading").textContent');
   await evaluate('document.querySelector("#month-next").click()');

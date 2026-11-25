@@ -49,3 +49,5 @@ Start.bat now checks SHA-256 signatures of current TS sources/config and compile
 
 ### Month calendar
 The radial chart uses a nonlinear day-length profile for a strong open spiral silhouette. A Monday-first month grid below it supports date selection, month navigation, and Today. The grid and spiral share the selected date; the live clock always shows system time. Production statistics remain available below the calendar.
+
+Imperial chronograph: gold/bronze/platinum semantic colors, polished metallic ray gradients, one ray per date, radial month and date labels (all dates at month detail; weekly sample in annual view), independent ISO-week tick track, short opacity-only month transitions respecting reduced motion. Calendar hit testing remains fixed during transitions.

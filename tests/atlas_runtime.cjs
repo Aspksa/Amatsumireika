@@ -18,7 +18,7 @@ class Element {
   removeAttribute(){}
   querySelector(){return new Element()}
   getBoundingClientRect(){return this.id==='right'?{left:830,top:0,width:278,height:1020}:{left:0,top:0,width:1108,height:1020}}
-  getContext(){return new Proxy({}, {get:(o,k)=>o[k]??(k==="createRadialGradient"?(()=>({addColorStop(){}})):(()=>{})),set:(o,k,v)=>{o[k]=v;return true}})}
+  getContext(){return new Proxy({}, {get:(o,k)=>o[k]??((k==="createRadialGradient"||k==="createLinearGradient")?(()=>({addColorStop(){}})):(()=>{})),set:(o,k,v)=>{o[k]=v;return true}})}
   focus(){}
 }
 const html=fs.readFileSync("index.html","utf8");const home=html.slice(html.indexOf('<aside id="left"'),html.indexOf('<section id="stage"'));for(const unwanted of ["time-shape","year-2026","year-auto","year-2027","day-events","calendar-refresh","time-history-status","cinema-mode","work-panel"])assert.ok(!home.includes('id="'+unwanted+'"'),"Removed from home: "+unwanted);
@@ -68,6 +68,9 @@ assert.equal(spiral.length,365);assert.equal(timeGeometry(2027,1).length,28);ass
 for(const [i,v] of spiral.entries()){assert.ok(Number.isFinite(v.q.x)&&Number.isFinite(v.q.y));assert.equal(spiralIndex(v.q.x-160,v.q.y-160,spiral.length),i)}
 assert.ok(Math.hypot(spiral[364].q.x-160,spiral[364].q.y-160)>Math.hypot(spiral[0].q.x-160,spiral[0].q.y-160));
 assert.ok(timeGeometryCache.size<=32);assert.equal(timeShape,"spiral");
+assert.equal(isoWeek(new Date(2027,0,1)),53);assert.equal(isoWeek(new Date(2027,0,4)),1);assert.equal(isoWeek(new Date(2028,11,31)),52);
+assert.ok(spiral.every(v=>Math.hypot(v.q.x-160,v.q.y-160)<=127.01));
+assert.equal(new Set(spiral.map(v=>dayKey(v.d))).size,365);assert.equal(new Set(timeGeometry(2028,null).map(v=>dayKey(v.d))).size,366);
 assert.equal(monthCells(2026,10).length,42);assert.equal(monthCells(2026,10).findIndex(Boolean),6);assert.equal(monthCells(2028,1).filter(Boolean).length,29);
 assert.ok(rayLength(364,365)-rayLength(273,365)>rayLength(91,365)-rayLength(0,365));
 selectMonthDate(new Date(2027,0,31,12),new Date(2027,0,1));moveMonth(1,new Date(2027,0,1));assert.equal(daySelected,"2027-02-28");moveMonth(-2,new Date(2027,0,1));assert.equal(daySelected,"2026-12-28");
