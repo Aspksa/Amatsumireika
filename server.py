@@ -100,7 +100,7 @@ def initialize():
         memory.init_index(db)
         db.execute("CREATE TABLE IF NOT EXISTS atlas_revision(id INTEGER PRIMARY KEY CHECK(id=1),version INTEGER NOT NULL)")
         db.execute("INSERT OR IGNORE INTO atlas_revision VALUES(1,0)")
-        for table in ("nodes","edges","cog_relations","cog_aliases","evo_versions","evo_review","cog_memory","documents"):
+        for table in ("nodes","edges","cog_relations","cog_aliases","evo_versions","evo_review","cog_memory","documents","document_jobs","document_versions","document_sources","document_folders"):
             for operation in ("INSERT","UPDATE","DELETE"):
                 db.execute(f"CREATE TRIGGER IF NOT EXISTS rev_{table}_{operation.lower()} AFTER {operation} ON {table} BEGIN UPDATE atlas_revision SET version=version+1 WHERE id=1; END")
         if db.execute("PRAGMA user_version").fetchone()[0]<5:
@@ -583,7 +583,12 @@ class Handler(BaseHTTPRequestHandler):
             q=parse_qs(urlsplit(self.path).query)
             self.reply(200,documents.list_docs(DB,q.get("q",[""])[0],q.get("trash",["0"])[0]=="1",q.get("folder",[""])[0],int(q.get("after",["0"])[0])))
         elif path=="/api/workspace/graph":
-            self.reply(200,document_workspace.graph(DB,int(parse_qs(urlsplit(self.path).query).get("after",["0"])[0])))
+            q=parse_qs(urlsplit(self.path).query)
+            self.reply(200,document_workspace.graph(DB,int(q.get("after",["0"])[0]),q.get("q",[""])[0],q.get("folder",[""])[0],q.get("trash",["0"])[0]=="1"))
+        elif path=="/api/workspace/revision":
+            self.reply(200,document_workspace.revision(DB))
+        elif path=="/api/workspace/quality":
+            self.reply(200,document_workspace.quality(DB))
         elif path=="/api/workspace/analytics":
             self.reply(200,document_workspace.analytics(DB))
         elif path=="/api/workspace/detail":
