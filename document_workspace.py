@@ -283,5 +283,8 @@ def rebuild_sources(path):
         db.execute("INSERT OR IGNORE INTO document_sources SELECT m.fingerprint,d.id,m.node_id FROM cog_memory m JOIN documents d ON m.source='document:'||d.id WHERE m.node_id<>d.node_id")
         # A unique fingerprint plus an explicit source is evidence; ambiguous matches stay unresolved.
         updated=db.execute("""UPDATE document_sources SET node_id=(SELECT MIN(m.node_id) FROM cog_memory m WHERE m.fingerprint=document_sources.fingerprint) WHERE node_id IS NULL AND (SELECT COUNT(*) FROM cog_memory m WHERE m.fingerprint=document_sources.fingerprint)=1 AND EXISTS(SELECT 1 FROM cog_candidates c WHERE c.fingerprint=document_sources.fingerprint AND c.state='approved')""").rowcount
+        links=0
+        for source in db.execute("""SELECT DISTINCT d.node_id,s.node_id FROM document_sources s JOIN documents d ON d.id=s.document_id JOIN nodes n ON n.id=s.node_id WHERE d.deleted IS NULL AND d.extract_status='indexed' AND d.node_id<>s.node_id AND NOT EXISTS(SELECT 1 FROM cog_candidates c WHERE c.fingerprint=s.fingerprint AND c.state='rejected') AND NOT EXISTS(SELECT 1 FROM documents x WHERE x.node_id=s.node_id AND x.deleted IS NOT NULL)""").fetchall():
+            links+=db.execute("INSERT OR IGNORE INTO edges VALUES(?,?)",tuple(sorted(source))).rowcount
         after=db.execute("SELECT COUNT(*) FROM document_sources").fetchone()[0]
-        return {"added":after-before,"resolved":updated,"unresolved":db.execute("SELECT COUNT(*) FROM document_sources WHERE node_id IS NULL").fetchone()[0],"historical_complete":False}
+        return {"added":after-before,"resolved":updated,"links":links,"unresolved":db.execute("SELECT COUNT(*) FROM document_sources WHERE node_id IS NULL").fetchone()[0],"historical_complete":False}
