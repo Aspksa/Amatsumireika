@@ -225,3 +225,5 @@ main:not(.expanded) #left{padding:clamp(6px,1vw,16px);justify-content:center;gap
 #left[data-cinema="off"] .cinema-digit,#left[data-cinema="off"] .cinema-colon,#left[data-cinema="quiet"] .cinema-digit,#left[data-cinema="quiet"] .cinema-colon{animation:none}
 #left[data-cinema="off"] .cinema-digit:after,#left[data-cinema="quiet"] .cinema-digit:after{display:none}
 @media(prefers-reduced-motion:reduce){.cinema-digit,.cinema-digit:after,.cinema-colon{animation:none!important}.cinema-digit:after{display:none}}
+
+#left[data-night="true"] .cinema-digit,#left[data-night="true"] .cinema-colon{animation:none}#left[data-night="true"] .cinema-digit:after{display:none}#left[data-cinema="off"] .chrono-clock #clock{text-shadow:none}.chrono-clock #clock{text-shadow:0 0 calc(10px * var(--cinema-intensity,.72)) #eac27555}
