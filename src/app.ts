@@ -263,10 +263,10 @@ function refreshCounts(){text($("counts"),(demo?"ДЕМО: ":"")+"Записей
 async function post(path:string,body:unknown){const r=await fetch(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});const s=await r.json();if(!r.ok)throw new Error(s.error??"Ошибка API");setState(s as Snapshot);signalTime();void loadEvents()}
 $<HTMLFormElement>("add").onsubmit=async e=>{e.preventDefault();try{await post("/api/nodes",{title:$<HTMLInputElement>("title").value,category:$<HTMLSelectElement>("category").value,folder:$<HTMLInputElement>("folder").value});$<HTMLInputElement>("title").value="";text($("message"),"Запись сохранена")}catch(err){text($("message"),String(err))}};
 $<HTMLFormElement>("link").onsubmit=async e=>{e.preventDefault();try{await post("/api/edges",{source:Number($<HTMLSelectElement>("source").value),target:Number($<HTMLSelectElement>("target").value)});text($("message"),"Связь сохранена")}catch(err){text($("message"),String(err))}};
-$("save-settings").onclick=async()=>{try{const r=await fetch("/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({palette:palettes.find(p=>p.colors===colors)?.name,speed,density,strength,groupSize,showLabels})});if(!r.ok)throw Error("API "+r.status);text($("message"),"Настройки сохранены в SQLite");void loadEvents()}catch(err){text($("message"),String(err))}};
+$("save-settings").onclick=async()=>{try{const r=await fetch("/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({palette:palettes.find(p=>p.colors===colors)?.name,speed,density,strength,groupSize,showLabels,cinemaMode,cinemaPower})});if(!r.ok)throw Error("API "+r.status);text($("message"),"Настройки сохранены в SQLite");void loadEvents()}catch(err){text($("message"),String(err))}};
 $<HTMLInputElement>("show-labels").onchange=e=>showLabels=(e.target as HTMLInputElement).checked;
 $("export-png").onclick=()=>{canvas.toBlob(blob=>{if(!blob)return;const url=URL.createObjectURL(blob);const link=document.createElement("a");link.href=url;link.download="amatsumireika-atlas.png";link.click();setTimeout(()=>URL.revokeObjectURL(url),1000)},"image/png")};
-async function loadSettings(){try{const response=await fetch("/api/settings");if(!response.ok)throw Error("API "+response.status);let saved=await response.json();if(Object.keys(saved).length===0){try{saved=JSON.parse(localStorage.getItem("atlas-visual-v2")??"{}")}catch{saved={}}}const p=palettes.find(p=>p.name===saved.palette);if(p){colors=p.colors;document.documentElement.style.setProperty("--accent",colors[0]);document.documentElement.classList.toggle("paper",p.name==="Бумага")}if(Number.isFinite(saved.speed))speed=Math.max(0,Math.min(2,saved.speed));if(Number.isFinite(saved.density))density=Math.max(12,Math.min(180,saved.density));if(Number.isFinite(saved.strength))strength=Math.max(0,Math.min(1,saved.strength));if(Number.isFinite(saved.groupSize))groupSize=Math.max(.55,Math.min(1,saved.groupSize));if(typeof saved.showLabels==="boolean")showLabels=saved.showLabels;$<HTMLInputElement>("speed").value=String(speed);$<HTMLInputElement>("density").value=String(density);$<HTMLInputElement>("strength").value=String(strength);$<HTMLInputElement>("group-size").value=String(groupSize);$<HTMLInputElement>("show-labels").checked=showLabels;renderPalettes();rebuild();refreshPanels();drawYear();wakeCinema()}catch(err){text($("message"),"Настройки: "+String(err))}}
+async function loadSettings(){try{const response=await fetch("/api/settings");if(!response.ok)throw Error("API "+response.status);let saved=await response.json();if(Object.keys(saved).length===0){try{saved=JSON.parse(localStorage.getItem("atlas-visual-v2")??"{}")}catch{saved={}}}const p=palettes.find(p=>p.name===saved.palette);if(p){colors=p.colors;document.documentElement.style.setProperty("--accent",colors[0]);document.documentElement.classList.toggle("paper",p.name==="Бумага")}if(Number.isFinite(saved.speed))speed=Math.max(0,Math.min(2,saved.speed));if(Number.isFinite(saved.density))density=Math.max(12,Math.min(180,saved.density));if(Number.isFinite(saved.strength))strength=Math.max(0,Math.min(1,saved.strength));if(Number.isFinite(saved.groupSize))groupSize=Math.max(.55,Math.min(1,saved.groupSize));if(typeof saved.showLabels==="boolean")showLabels=saved.showLabels;if(["auto","cinema","quiet","off"].includes(saved.cinemaMode))cinemaMode=saved.cinemaMode;if(typeof saved.cinemaPower==="number"&&Number.isFinite(saved.cinemaPower))cinemaPower=cinemaClamp(saved.cinemaPower,0,1);$<HTMLSelectElement>("cinema-mode").value=cinemaMode;$<HTMLInputElement>("cinema-power").value=String(cinemaPower*100);cinemaSettings();$<HTMLInputElement>("speed").value=String(speed);$<HTMLInputElement>("density").value=String(density);$<HTMLInputElement>("strength").value=String(strength);$<HTMLInputElement>("group-size").value=String(groupSize);$<HTMLInputElement>("show-labels").checked=showLabels;renderPalettes();rebuild();refreshPanels();drawYear();wakeCinema()}catch(err){text($("message"),"Настройки: "+String(err))}}
 type AtlasEvent={at:string;kind:string;detail:string};
 let events:AtlasEvent[]=[],month=new Date(),daySelected=dayKey(new Date());
 function dayKey(d:Date){return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")}
@@ -304,6 +304,16 @@ function productionStats(dates:Date[]){
 let autoYear=true,calendarYear=new Date().getFullYear(),detailMonth:number|null=null;
 let birthAt=-100000,birthKey="",calendarAnim=false,clockNotice="",calendarSource="",updatePending=false,lastUpdateDay="";
 const timeShape="spiral";
+// A single sampled local clock for the live calendar, digits and animated rings.
+let chronosWall=new Date(),chronosMono=performance.now();
+function chronosNow(){return new Date(chronosWall.getTime())}
+function chronosFrame(now:number){return new Date(chronosWall.getTime()+Math.min(999-chronosWall.getMilliseconds(),Math.max(0,now-chronosMono)))}
+let chronosHover="",chronosLinkDate="",chronosLinkAt=-100000,chronosRenderKey="",chronosPreviewRay:TimeRay|undefined;
+function chronosLink(key:string){chronosLinkDate=key;chronosLinkAt=performance.now();wakeCinema()}
+function chronosPreview(key:string){if(chronosHover===key)return;chronosHover=key;chronosPreviewRay=key?timeGeometry(displayedYear(chronosNow()),detailMonth).find(v=>dayKey(v.d)===key):undefined;wakeCinema()}
+function weekProgress(d:Date){const w=(d.getDay()+6)%7;return (w+(d.getHours()*3600+d.getMinutes()*60+d.getSeconds())/86400)/7}
+function parseJumpDate(value:string){if(!/^\d{4}-\d{2}-\d{2}$/.test(value))return null;const d=new Date(value+"T12:00:00");return Number.isFinite(d.getTime())&&dayKey(d)===value&&d.getFullYear()>=2026&&d.getFullYear()<=2100?d:null}
+
 let monthPulse=-100000,yearPulse=-100000;
 let historyDate:string|null=null,playbackAt=0,playbackRunning=false,playbackKind:"year"|"events"="year",playbackDays:string[]=[];
 let timeCursor:Point={x:0,y:0},timeFrame=0,timeFrameMs=0,timeQuality=1,timeLast=0,timePulse=-100000;
@@ -382,9 +392,19 @@ function cinemaDraw(c:CanvasRenderingContext2D,now:number,d:Date,dt:number,budge
  cinemaRing(c,65,-Math.PI/2,-Math.PI/2+tau*min/60,light,.8,.85);
  cinemaRing(c,61,-Math.PI/2,-Math.PI/2+tau*hr/12,muted,.7,.7);
  const p=timePoint(a,69);c.fillStyle=gold;c.beginPath();c.arc(p.x,p.y,2,0,tau);c.fill();
+ const rays=timeGeometry(displayedYear(d),detailMonth);
+ // Static hover highlighting survives reduced motion and disabled decorative effects.
+ if(chronosPreviewRay)cinemaLine(c,chronosPreviewRay.p,chronosPreviewRay.q,gold,2.4,.9);
  if(!budget.count||!cinemaPower)return;
- const rays=timeGeometry(displayedYear(d),detailMonth),ref=dayKey(timeReference(d)),filled=rays.filter(v=>dayKey(v.d)<=ref);
- const target=filled.length?filled[filled.length-1].q:p,phase=now*.001,power=cinemaPower;
+ const ref=dayKey(timeReference(d)),filled=rays.filter(v=>dayKey(v.d)<=ref);
+ const target=filled.length?filled[filled.length-1].q:p,phase=now*.001,power=cinemaPower*(.58+.42*Math.sin(Math.PI*(d.getHours()+d.getMinutes()/60)/24));
+ const todayRay=rays.find(v=>dayKey(v.d)===dayKey(d));
+ if(todayRay){const ratio=weekProgress(d),q={x:todayRay.p.x+(todayRay.q.x-todayRay.p.x)*ratio,y:todayRay.p.y+(todayRay.q.y-todayRay.p.y)*ratio};cinemaLine(c,todayRay.p,q,gold,2,.7*power)}
+ const linked=rays.find(v=>dayKey(v.d)===chronosLinkDate),lf=(now-chronosLinkAt)/650;
+ if(linked&&lf>=0&&lf<1){const t=eased(lf),q={x:linked.p.x+(linked.q.x-linked.p.x)*t,y:linked.p.y+(linked.q.y-linked.p.y)*t};cinemaGlow(c,q.x,q.y,7,gold,Math.sin(Math.PI*lf)*power);cinemaLine(c,linked.p,q,gold,1.8,(1-lf)*power)}
+ cinemaYearTransition(c,now,power);
+ cinemaWave(c,now,cinemaRevealAt,650,gold,72,138,.36*power);
+ cinemaWave(c,now,cinemaBirthAt,900,gold,73,142,.3*power);
  seasonalHighlights(c,filled,phase,budget,power);
  cinemaGlow(c,p.x,p.y,7,gold,.65*power);
  if(filled.length){
@@ -403,7 +423,7 @@ function cinemaOnscreen(){return cinemaVisible&&!expanded&&!presentation&&docume
 function wakeCinema(){if(!cinemaPending&&timeOverlayCtx&&cinemaOnscreen()){cinemaPending=true;requestAnimationFrame(overlayFrame)}}
 function overlayFrame(now:number){
  cinemaPending=false;if(!timeOverlay||!timeOverlayCtx||!cinemaOnscreen())return;
- const d=new Date(),budget=cinemaBudget(cinemaPower===0?"off":cinemaMode,d.getHours(),cinemaTier,reduced);
+ const d=chronosFrame(now),budget=cinemaBudget(cinemaPower===0?"off":cinemaMode,d.getHours(),cinemaTier,reduced);
  if(now-timeLast<1000/budget.fps-.8){wakeCinema();return}
  const start=performance.now(),dt=timeLast?Math.min(.05,(now-timeLast)/1000):1/60;timeLast=now;cinemaTick++;
  const c=timeOverlayCtx,sz=wheel.width;if(timeOverlay.width!==sz)timeOverlay.width=sz;if(timeOverlay.height!==sz)timeOverlay.height=sz;
@@ -421,9 +441,9 @@ function cinemaDigits(now:Date){
  if(value===cinemaClockText)return;
  const old=cinemaClockText;cinemaClockText=value;root.setAttribute("aria-label",value);
  if(cinemaDigitEls.length!==value.length){root.replaceChildren();cinemaDigitEls=[];for(const [i,ch] of Array.from(value).entries()){const s=document.createElement("span");s.className=(ch===":"?"cinema-colon":"cinema-digit")+(i>=5?" clock-seconds":"");s.setAttribute("aria-hidden","true");root.append(s);cinemaDigitEls.push(s)}}
- const quiet=cinemaQuiet(now.getHours());$("left").setAttribute("data-night",String(quiet));
+ const quiet=cinemaQuiet(now.getHours());$("left").setAttribute("data-night",String(quiet));$("left").style.setProperty("--chrono-daylight",String(.55+.45*Math.sin(Math.PI*(now.getHours()+now.getMinutes()/60)/24)));
  for(let i=0;i<value.length;i++){const ch=value[i],s=cinemaDigitEls[i];if(ch===old[i]&&s.textContent===ch)continue;text(s,ch);s.classList.remove("digit-arrive");s.removeAttribute("data-old");
- if(ch!==":"&&ch!==old[i]&&cinemaMotion()&&!quiet&&cinemaOnscreen()){void s.offsetWidth;s.classList.add("digit-arrive");if(old[i]&&old[i]!==":"){s.setAttribute("data-old",old[i]);if(i>=value.length-2)cinemaBurst(160+(i-3.5)*10,152,3,20,0)}}}
+ if(ch!==":"&&ch!==old[i]&&cinemaMotion()&&!quiet&&cinemaOnscreen()){void s.offsetWidth;s.classList.add("digit-arrive");if(old[i]&&old[i]!==":"){if(i>=value.length-2)cinemaBurst(160+(i-3.5)*10,152,3,20,0)}}}
  cinemaSecondAt=performance.now();wakeCinema();
 }
 function cinemaSettings(){
@@ -519,15 +539,15 @@ function seasonalHighlights(c:CanvasRenderingContext2D,rays:TimeRay[],phase:numb
  const count=Math.min(15,rays.length);
  for(let i=0;i<count;i++){
   const v=rays[(Math.floor(phase*2)+i*Math.max(1,Math.floor(rays.length/count)))%rays.length],season=seasonOf(v.d.getMonth());
-  if(season==="autumn")continue;
+  
   const glow=(.5+.5*Math.sin(phase*1.2+i*2.4))*.26*power;
   const color=seasonalRayColor(v.d,!paper());
   const q={x:v.p.x+(v.q.x-v.p.x)*.86,y:v.p.y+(v.q.y-v.p.y)*.86};
   if(season==="winter"){c.globalAlpha=glow;c.fillStyle=color;c.beginPath();c.arc(v.q.x,v.q.y,.8,0,tau);c.fill();c.globalAlpha=1}
-  else cinemaGlow(c,q.x,q.y,season==="spring"?4:3.5,color,glow);
+  else cinemaGlow(c,q.x,q.y,season==="spring"?4:season==="autumn"?4.5:3.5,color,glow);
  }
 }
-function drawYear(now=new Date()){
+function drawYear(now=chronosNow()){
  const y=displayedYear(now),days=viewDates(y),today=dayKey(timeReference(now)),selected=daySelected;const elapsed=performance.now()-birthAt,birth=cinemaMotion()&&elapsed>=0&&elapsed<1400;
  const box=wheel.getBoundingClientRect();const side=Math.max(1,Math.min(box.width,box.height));if(side<=1)return;
  const size=Math.max(1,Math.round(side*Math.min(devicePixelRatio||1,2)));if(wheel.width!==size)wheel.width=size;if(wheel.height!==size)wheel.height=size;
@@ -572,17 +592,17 @@ function drawYear(now=new Date()){
  }
  const progress=days.filter(d=>dayKey(d)<=today).length/days.length;stroke(-Math.PI/2-progress*tau,-Math.PI/2,inner-1,gold,1.1);if(birth&&days.some(d=>dayKey(d)===birthKey)){c.globalAlpha=(1-elapsed/1400)*.55;stroke(0,tau,inner+72*eased(elapsed/1400),gold,1.6);c.globalAlpha=1}
 }
-// Monday-first month layout. Always six weeks, with empty leading/trailing slots.
+// Monday-first month layout. Render only the four to six rows actually required.
 function monthCells(year:number,m:number):(Date|null)[]{
  const first=new Date(year,m,1,12),offset=(first.getDay()+6)%7,count=new Date(year,m+1,0,12).getDate();
- return Array.from({length:42},(_,i)=>i>=offset&&i<offset+count?new Date(year,m,i-offset+1,12):null);
+ return Array.from({length:Math.ceil((offset+count)/7)*7},(_,i)=>i>=offset&&i<offset+count?new Date(year,m,i-offset+1,12):null);
 }
-function selectMonthDate(d:Date,now=new Date()){
+function selectMonthDate(d:Date,now=chronosNow()){
  if(d.getFullYear()<2026||d.getFullYear()>2100)return;
  playbackRunning=false;playbackSerial++;historyDate=null;calendarYear=d.getFullYear();autoYear=calendarYear===now.getFullYear();
- if(detailMonth!==null)detailMonth=d.getMonth();const delta=(d.getFullYear()-month.getFullYear())*12+d.getMonth()-month.getMonth();daySelected=dayKey(d);renderCalendar(now);if(delta)animateMonthSwitch(delta);
+ if(detailMonth!==null)detailMonth=d.getMonth();const delta=(d.getFullYear()-month.getFullYear())*12+d.getMonth()-month.getMonth();daySelected=dayKey(d);chronosPreview("");renderCalendar(now);chronosLink(daySelected);if(delta)animateMonthSwitch(delta);
 }
-function moveMonth(offset:number,now=new Date()){
+function moveMonth(offset:number,now=chronosNow()){
  const d=new Date(month.getFullYear(),month.getMonth()+offset,1,12);
  if(d.getFullYear()<2026||d.getFullYear()>2100)return;
  const day=Math.min(month.getDate(),new Date(d.getFullYear(),d.getMonth()+1,0,12).getDate());
@@ -595,6 +615,11 @@ function monthDayKind(d:Date):DayType{
 function renderMonthGrid(current:Date,now:Date){
  const y=current.getFullYear(),m=current.getMonth(),selected=dayKey(current),today=dayKey(now),root=$("month-grid");
  text($("month-heading"),current.toLocaleDateString("ru-RU",{month:"long",year:"numeric"}));$("spiral-tooltip").hidden=true;
+ $<HTMLInputElement>("chrono-jump").value=selected;
+ const signature=[selected,today,JSON.stringify(productionRules[y]??null),detailMonth].join("|");
+ if(signature===chronosRenderKey)return;
+ const prev=root.querySelector<HTMLElement>(".is-selected"),previousRect=prev?.getBoundingClientRect();chronosRenderKey=signature;
+ $("left").style.setProperty("--chrono-season",seasonPaint(m,true));$("left").style.setProperty("--chrono-season-paper",seasonPaint(m,false));
  $("month-heading").setAttribute("aria-pressed",String(detailMonth!==null));$("month-heading").style.setProperty("--season-dark",seasonPaint(m,true));$("month-heading").style.setProperty("--season-light",seasonPaint(m,false));
  text($("month-rule-notice"),productionRules[y]?"":"Переносы на этот год не загружены; показаны обычные выходные и фиксированные праздники.");
  $<HTMLButtonElement>("month-prev").disabled=y===2026&&m===0;
@@ -604,18 +629,24 @@ function renderMonthGrid(current:Date,now:Date){
   if(!d){const blank=document.createElement("span");blank.className="month-blank";blank.setAttribute("aria-hidden","true");root.append(blank);continue}
   const k=dayKey(d),b=document.createElement("button");b.type="button";b.className="month-day";
   const kind=monthDayKind(d);b.classList.add("kind-"+kind);b.setAttribute("data-date",k);
+  if(k<today)b.classList.add("is-past");
   if(k===today){b.classList.add("is-today");b.setAttribute("aria-current","date")}
   if(k===selected)b.classList.add("is-selected");
   b.setAttribute("aria-pressed",String(k===selected));const kindLabel=productionRules[y]?dayNames[kind]:kind==="holiday"?"Фиксированный праздник":kind==="weekend"?"Обычный выходной":"Предварительно рабочий день";
   const label=d.toLocaleDateString("ru-RU",{weekday:"long",day:"numeric",month:"long",year:"numeric"})+" · "+kindLabel;b.setAttribute("aria-label",label);b.title=label;
-  text(b,String(d.getDate()));b.onclick=()=>{selectMonthDate(d);const next=root.children[(d.getDay()+6)%7+7*Math.floor(((new Date(y,m,1,12).getDay()+6)%7+d.getDate()-1)/7)] as HTMLElement|undefined;next?.focus()};root.append(b);
+  text(b,String(d.getDate()));b.addEventListener("pointerenter",()=>chronosPreview(k));b.addEventListener("pointerleave",()=>chronosPreview(""));b.addEventListener("focus",()=>chronosPreview(k));b.addEventListener("blur",()=>chronosPreview(""));b.onclick=()=>{selectMonthDate(d);const next=root.children[(d.getDay()+6)%7+7*Math.floor(((new Date(y,m,1,12).getDay()+6)%7+d.getDate()-1)/7)] as HTMLElement|undefined;next?.focus()};root.append(b);
+  if(k===selected&&previousRect&&cinemaMotion()&&cinemaOnscreen()){
+   const rect=b.getBoundingClientRect(),dx=previousRect.left-rect.left,dy=previousRect.top-rect.top;
+   if(Math.abs(dx)+Math.abs(dy)>1&&Math.abs(dx)+Math.abs(dy)<400){b.style.setProperty("--ring-x",dx+"px");b.style.setProperty("--ring-y",dy+"px");b.classList.add("ring-arrive")}
+  }
  }
 }
 $("month-prev").onclick=()=>moveMonth(-1);
 $("month-next").onclick=()=>moveMonth(1);
+$("chrono-jump-go").onclick=()=>{const d=parseJumpDate($<HTMLInputElement>("chrono-jump").value);if(d){selectMonthDate(d);text($("chrono-jump-status"),"Дата выбрана")}else text($("chrono-jump-status"),"Допустимые даты: 2026–2100")};
 $("month-heading").onclick=()=>{if(detailMonth===null)openCalendarMonth(month.getMonth());else closeCalendarMonth()};
 $("month-grid").addEventListener("keydown",e=>{if(e.key==="Home"){e.preventDefault();chooseCalendarYear(null);const active=$("month-grid").querySelector<HTMLElement>(".is-today");active?.focus()}});
-function renderCalendar(now=new Date()){
+function renderCalendar(now=chronosNow()){
  const year=displayedYear(now),current=daySelected.slice(0,4)===String(year)?new Date(daySelected+"T12:00:00"):new Date(year,0,1,12);
  const selected=dayKey(current);daySelected=selected;month=current;renderMonthGrid(current,now);
 
@@ -623,9 +654,9 @@ function renderCalendar(now=new Date()){
  renderEventRows($("day-events"),events.filter(e=>dayKey(new Date(e.at))===selected),"Нет зарегистрированных событий");
  drawYear(now);if(timeDataReady&&!playbackRunning)void refreshTimeWindow();
 }
-function chooseCalendarYear(year:number|null,now=new Date()){const prior=displayedYear(now);if(prior!==(year??now.getFullYear())){cinemaYearAt=performance.now();cinemaPreviousYear=prior;wakeCinema()}historyDate=null;detailMonth=null;autoYear=year===null;calendarYear=year??now.getFullYear();daySelected=calendarYear===now.getFullYear()?dayKey(now):dayKey(new Date(calendarYear,0,1,12));renderCalendar(now)}
-function openCalendarMonth(m:number,now=new Date()){if(m<0||m>11)return;cinemaRevealAt=performance.now();wakeCinema();detailMonth=m;const y=displayedYear(now);if(daySelected.slice(0,7)!==dayKey(new Date(y,m,1)).slice(0,7))daySelected=dayKey(new Date(y,m,1,12));renderCalendar(now);animateMonthSwitch()}
-function closeCalendarMonth(now=new Date()){cinemaRevealAt=performance.now();wakeCinema();detailMonth=null;renderCalendar(now);animateMonthSwitch()}
+function chooseCalendarYear(year:number|null,now=chronosNow()){const prior=displayedYear(now);if(prior!==(year??now.getFullYear())){cinemaYearAt=performance.now();cinemaPreviousYear=prior;wakeCinema()}historyDate=null;detailMonth=null;autoYear=year===null;calendarYear=year??now.getFullYear();daySelected=calendarYear===now.getFullYear()?dayKey(now):dayKey(new Date(calendarYear,0,1,12));renderCalendar(now)}
+function openCalendarMonth(m:number,now=chronosNow()){if(m<0||m>11)return;cinemaRevealAt=performance.now();wakeCinema();detailMonth=m;const y=displayedYear(now);if(daySelected.slice(0,7)!==dayKey(new Date(y,m,1)).slice(0,7))daySelected=dayKey(new Date(y,m,1,12));renderCalendar(now);animateMonthSwitch()}
+function closeCalendarMonth(now=chronosNow()){cinemaRevealAt=performance.now();wakeCinema();detailMonth=null;renderCalendar(now);animateMonthSwitch()}
 
 wheel.addEventListener("pointerup",e=>{const rect=wheel.getBoundingClientRect();if(!rect.width||!rect.height)return;const p=timePointer(e.clientX,e.clientY,rect,detailMonth!==null),hit=calendarHit(p.x,p.y,viewDates(displayedYear(new Date())),detailMonth!==null);if(!hit)return;if(hit.month){openCalendarMonth(hit.date.getMonth());return}selectMonthDate(hit.date)});
 wheel.addEventListener("dblclick",e=>{e.preventDefault();closeCalendarMonth()});
@@ -641,10 +672,10 @@ document.addEventListener("input",syncRanges);setInterval(syncRanges,250);syncRa
 void loadSettings();void loadEvents();
 text($("legend"),"Нажмите на ядро, чтобы открыть полный атлас");
 let lastDay=dayKey(new Date()),lastWall=Date.now(),lastMono=performance.now();
-function updateCalendarDate(now:Date){const key=dayKey(now);if(key!==lastDay){const lastDayBefore=lastDay,rollover=key.slice(0,4)!==lastDay.slice(0,4),wasToday=daySelected===lastDay;lastDay=key;if(rollover){yearPulse=performance.now();historyDate=null;playbackRunning=false;autoYear=true;calendarYear=now.getFullYear();daySelected=key;detailMonth=null}else if(autoYear&&wasToday){daySelected=key;if(detailMonth!==null)detailMonth=now.getMonth()}if(key.slice(0,7)!==lastDayBefore.slice(0,7))monthPulse=performance.now();if(key>lastDayBefore){animateBirth(now);cinemaEvent(now,lastDayBefore)}renderCalendar(now)}}
+function updateCalendarDate(now:Date){const key=dayKey(now);if(key!==lastDay){const lastDayBefore=lastDay,rollover=key.slice(0,4)!==lastDay.slice(0,4),wasToday=daySelected===lastDay;lastDay=key;if(rollover){yearPulse=performance.now();historyDate=null;playbackRunning=false;autoYear=true;calendarYear=now.getFullYear();daySelected=key;detailMonth=null}else if(autoYear&&wasToday){daySelected=key;if(detailMonth!==null)detailMonth=now.getMonth()}if(key.slice(0,7)!==lastDayBefore.slice(0,7)){monthPulse=performance.now();animateMonthSwitch(1)}if(key>lastDayBefore){animateBirth(now);cinemaEvent(now,lastDayBefore)}renderCalendar(now)}}
 function checkClock(now:Date,monoNow:number){const delta=now.getTime()-lastWall,monotonic=monoNow-lastMono;lastWall=now.getTime();lastMono=monoNow;const before=clockNotice;if(delta< -2000||Math.abs(delta-monotonic)>5000)clockNotice="Системное время изменилось или ПК проснулся";if(before!==clockNotice)renderCalendar(now)}
 function needsCalendarUpdate(now:Date){return !productionRules[now.getFullYear()]||(now.getMonth()>=8&&!productionRules[now.getFullYear()+1])}
-function clock(){const now=new Date();checkClock(now,performance.now());cinemaDigits(now);updateCalendarDate(now);if(needsCalendarUpdate(now)&&lastUpdateDay!==dayKey(now)){lastUpdateDay=dayKey(now);void loadCalendarUpdates(true)}}clock();setInterval(clock,1000);
+function clock(){const now=new Date();chronosWall=now;chronosMono=performance.now();checkClock(now,chronosMono);cinemaDigits(now);updateCalendarDate(now);if(needsCalendarUpdate(now)&&lastUpdateDay!==dayKey(now)){lastUpdateDay=dayKey(now);void loadCalendarUpdates(true)}}clock();setInterval(clock,1000);
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"){clock();wakeCinema()}});
 async function loadCalendarUpdates(refresh=false){if(updatePending)return;updatePending=true;try{const r=await fetch("/api/calendar"+(refresh?"/refresh":""),refresh?{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"}:undefined);if(!r.ok)throw Error("API "+r.status);const data=await r.json();for(const rule of data.calendars??[]){if(!productionRules[rule.year]){productionRules[rule.year]={rest:rule.rest,short:rule.short,work:rule.work};timeGeometryCache.clear()}}calendarSource=data.status??"Локальные данные";text($("calendar-update-status"),calendarSource);renderCalendar()}catch{ text($("calendar-update-status"),"Обновление недоступно · сохранены локальные данные")}finally{updatePending=false}}
 $("calendar-refresh").onclick=()=>void loadCalendarUpdates(true);void loadCalendarUpdates();
@@ -688,6 +719,7 @@ timeOverlay=$<HTMLCanvasElement>("time-overlay");timeOverlayCtx=timeOverlay.getC
 try{const saved=JSON.parse(localStorage.getItem("chrono-cinema-v2")??"{}");if(["auto","cinema","quiet","off"].includes(saved.mode))cinemaMode=saved.mode;if(typeof saved.power==="number"&&Number.isFinite(saved.power))cinemaPower=cinemaClamp(saved.power,0,1)}catch{}
 $<HTMLSelectElement>("cinema-mode").value=cinemaMode;$<HTMLInputElement>("cinema-power").value=String(cinemaPower*100);cinemaSettings();
 $("cinema-mode").onchange=cinemaSettings;$("cinema-power").oninput=cinemaSettings;
+$("chrono-save").onclick=async()=>{try{await jsonRequest("/api/settings",{cinemaMode,cinemaPower});text($("chrono-save-status"),"Сохранено в SQLite")}catch(err){text($("chrono-save-status"),"Не сохранено: "+String(err))}};
 $("time-reverse").onclick=()=>startTimePlayback("year",true);
 if(typeof IntersectionObserver!=="undefined"){new IntersectionObserver(entries=>{cinemaVisible=entries.some(e=>e.isIntersecting);if(cinemaVisible){drawYear();wakeCinema()}}).observe(wheel)}
 setInterval(()=>{if(cinemaOnscreen())wakeCinema()},1000);

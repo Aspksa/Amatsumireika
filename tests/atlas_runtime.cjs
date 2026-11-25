@@ -73,7 +73,7 @@ assert.deepEqual(Array.from({length:12},(_,i)=>seasonOf(i)),["winter","winter","
 assert.equal(isoWeek(new Date(2027,0,1)),53);assert.equal(isoWeek(new Date(2027,0,4)),1);assert.equal(isoWeek(new Date(2028,11,31)),52);
 assert.ok(spiral.every(v=>Math.hypot(v.q.x-160,v.q.y-160)<=139.01));
 assert.equal(new Set(spiral.map(v=>dayKey(v.d))).size,365);assert.equal(new Set(timeGeometry(2028,null).map(v=>dayKey(v.d))).size,366);
-assert.equal(monthCells(2026,10).length,42);assert.equal(monthCells(2026,10).findIndex(Boolean),6);assert.equal(monthCells(2028,1).filter(Boolean).length,29);
+assert.equal(monthCells(2026,10).length,42);assert.equal(monthCells(2027,1).length,28);assert.equal(monthCells(2028,1).length,35);assert.equal(parseJumpDate("2027-02-29"),null);assert.equal(dayKey(parseJumpDate("2028-02-29")),"2028-02-29");assert.equal(parseJumpDate("2101-01-01"),null);assert.equal(weekProgress(new Date(2027,0,4,0)),0);assert.ok(weekProgress(new Date(2027,0,10,23))>.98);assert.equal(monthCells(2026,10).findIndex(Boolean),6);assert.equal(monthCells(2028,1).filter(Boolean).length,29);
 assert.ok(calendarRayLength(new Date(2027,11,31))-calendarRayLength(new Date(2027,8,30))>calendarRayLength(new Date(2027,2,31))-calendarRayLength(new Date(2027,0,1)));
 for(let m=0;m<12;m++){const dates=yearDates(2027).filter(d=>d.getMonth()===m);assert.ok(dates.every((d,i)=>!i||calendarRayLength(d)>=calendarRayLength(dates[i-1])));if(m)assert.ok(calendarRayLength(dates[0])>calendarRayLength(new Date(2027,m,0)));assert.ok(monthWeek(dates[0]).count>=4&&monthWeek(dates[0]).count<=6)}
 assert.equal(monthWeek(new Date(2026,10,1)).count,6);

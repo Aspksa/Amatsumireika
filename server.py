@@ -326,7 +326,21 @@ def save_settings(data):
         if type(data["showLabels"]) is not bool:
             raise ValueError("Invalid labels")
         out["showLabels"] = data["showLabels"]
+    if "cinemaMode" in data:
+        if data["cinemaMode"] not in ("auto", "cinema", "quiet", "off"):
+            raise ValueError("Invalid cinema mode")
+        out["cinemaMode"] = data["cinemaMode"]
+    if "cinemaPower" in data:
+        value = data["cinemaPower"]
+        if type(value) not in (int,float) or not math.isfinite(value) or not 0 <= value <= 1:
+            raise ValueError("Invalid cinema power")
+        out["cinemaPower"] = value
     with closing(connect()) as db, db:
+        db.execute("BEGIN IMMEDIATE")
+        row = db.execute("SELECT payload FROM ui_settings WHERE id=1").fetchone()
+        previous = json.loads(row[0]) if row else {}
+        previous.update(out)
+        out = previous
         db.execute("INSERT INTO ui_settings VALUES(1,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload",(json.dumps(out,ensure_ascii=False),))
         event(db,"settings","Визуальные настройки сохранены")
     return out
