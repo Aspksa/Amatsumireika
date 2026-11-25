@@ -2,6 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 import sqlite3
+from contextlib import closing
 import server
 
 class AtlasTest(unittest.TestCase):
@@ -21,6 +22,23 @@ class AtlasTest(unittest.TestCase):
         server.initialize()
         self.assertEqual(len(server.snapshot()["nodes"]),2)
         self.assertEqual(server.snapshot()["edges"],[{"source":a,"target":b}])
+    def test_folder_and_migration(self):
+        a=server.add_node("Файл","Документы","Работа/Отчёты")
+        self.assertEqual(server.snapshot()["nodes"][0]["folder"],"Работа/Отчёты")
+        with self.assertRaises(ValueError):
+            server.add_node("X","Документы","../bad")
+        server.initialize()
+        self.assertEqual(server.snapshot()["nodes"][0]["id"],a)
+
+    def test_legacy_schema(self):
+        with closing(sqlite3.connect(server.DB)) as db, db:
+            db.execute("DROP TABLE edges")
+            db.execute("DROP TABLE nodes")
+            db.execute("CREATE TABLE nodes(id INTEGER PRIMARY KEY,title TEXT NOT NULL,category TEXT NOT NULL)")
+            db.execute("INSERT INTO nodes VALUES(1,'old','Знания')")
+        server.initialize()
+        self.assertEqual(server.snapshot()["nodes"][0]["folder"],"")
+
     def test_invalid(self):
         with self.assertRaises(ValueError):
             server.add_node("","Знания")

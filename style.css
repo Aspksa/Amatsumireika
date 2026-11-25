@@ -19,3 +19,27 @@ footer{height:25px;flex:none;display:flex;align-items:center;justify-content:spa
 @media(min-width:1450px){body{font-size:13px}aside{padding:14px}}
 @media(max-width:760px){body{height:auto;min-height:100dvh;overflow:auto}header{height:auto;flex-wrap:wrap}main,main.expanded{height:auto;grid-template-columns:minmax(0,1fr)}#stage{grid-row:1;height:65vh;min-height:360px}aside{max-height:55vh}footer{height:auto;flex-wrap:wrap}#activity-grid{grid-template-columns:repeat(5,minmax(0,1fr))}}
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
+
+/* v0.3: dedicated workspace and interaction */
+#core-open{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:clamp(45px,10%,82px);aspect-ratio:1;border-radius:50%;border:1px solid transparent;background:transparent;padding:0;z-index:3}
+#core-open:hover,#core-open:focus-visible{border-color:var(--accent);box-shadow:0 0 18px #3cdbbc25}
+#core-open span{position:absolute;left:50%;bottom:calc(100% + 8px);transform:translateX(-50%);white-space:nowrap;opacity:0;background:var(--panel);border:1px solid var(--line);padding:6px 9px;border-radius:4px;color:var(--accent);pointer-events:none}
+#core-open:hover span,#core-open:focus-visible span{opacity:1}
+main.expanded #core-open{display:none}
+body:has(main:not(.expanded)) #home{display:none}
+body:has(main.expanded) #atlas{display:none}
+.modes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}
+.modes button{padding:7px 3px}
+.grouping{margin:8px 0}.grouping button{flex:1}
+#graph-groups{max-height:132px;overflow:auto;margin:6px 0}
+.group-toggle{width:100%;display:flex;justify-content:space-between;gap:4px;text-align:left;border:0;border-bottom:1px solid var(--line);border-radius:0;padding:5px 2px;background:transparent}
+#stage{isolation:isolate}
+main.expanded #stage{background-color:var(--bg);background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='36' height='42' viewBox='0 0 36 42'%3E%3Cg fill='none' stroke='%235b8291' stroke-opacity='.12' stroke-width='.55'%3E%3Cpath d='M9 0H27L36 10.5 27 21H9L0 10.5Z M9 21H27L36 31.5 27 42H9L0 31.5Z'/%3E%3C/g%3E%3C/svg%3E")}
+body.presentation header,body.presentation footer,body.presentation aside{display:none!important}
+body.presentation main,body.presentation main.expanded{grid-template-columns:minmax(0,1fr);padding:0}
+body.presentation #stage{height:100%;min-height:0;border:0}
+#exit-presentation{position:absolute;top:10px;right:10px;z-index:5}
+body:not(.presentation) #exit-presentation{display:none}
+@keyframes atlas-panel-in{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
+@media(prefers-reduced-motion:no-preference){main.reveal aside{animation:atlas-panel-in .36s ease-out both}main.reveal #right{animation-delay:.07s}main.reveal .activity-cell{animation:atlas-panel-in .35s ease-out both;animation-delay:calc(var(--order,0)*25ms)}}
+@media(max-width:760px){body.presentation{height:100dvh;overflow:hidden}body.presentation main{flex:1;min-height:0}header nav{flex-wrap:wrap}}
