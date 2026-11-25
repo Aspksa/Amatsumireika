@@ -128,6 +128,10 @@ async function main(){
   await until(()=>evaluate('document.querySelector("#disk-list").textContent.includes("test-ci.txt")'),"document upload");
   await evaluate('Array.from(document.querySelectorAll(".disk-file")).find(b=>b.textContent.includes("test-ci.txt")).click()');
   await until(()=>evaluate('document.querySelector("#disk-preview").textContent.includes("запасная деталь")'),"document text preview");
+  await evaluate('document.querySelector("#disk-mode-graph").click()');
+  await until(()=>evaluate('document.querySelector("#disk-graph-legend").textContent.includes("реальные связи")'),"document graph");
+  await evaluate('document.querySelector("#disk-mode-list").click()');
+  assert.equal(await evaluate('document.querySelector("#disk-graph-pane").hidden'),true);
   await evaluate('document.querySelector("#disk-back").click()');
   assert.equal(await evaluate('document.querySelector("#disk-page").hidden'),true);
   assert.deepEqual(errors,[]);

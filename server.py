@@ -441,7 +441,7 @@ def send_chat(content):
         elif command.startswith("/план "):
             result=cognitive.adaptive_plan(DB,content[6:],db);append("system","Локальный план: "+"; ".join(result["steps"]))
         elif command.startswith("/поиск-фрагмента "):
-            result=document_workspace.excerpts(DB,content[16:][:300])
+            result=document_workspace.excerpts(DB,content[len("/поиск-фрагмента "):][:300])
             append("system","Фрагменты документов: "+("\n".join("#"+str(x["id"])+" "+x["name"]+": "+x["excerpt"] for x in result["sources"]) or "Совпадений нет"))
         elif command.startswith("/документы "):
             matches=documents.list_docs(DB,content[11:][:300])["files"][:8]
@@ -586,6 +586,12 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(200,documents.by_node(DB,int(parse_qs(urlsplit(self.path).query).get("id",["0"])[0])))
         elif path=="/api/documents/preview":
             self.reply(200,documents.preview(DB,int(parse_qs(urlsplit(self.path).query).get("id",["0"])[0])))
+        elif path=="/api/documents/image":
+            name,raw=documents.binary(DB,int(parse_qs(urlsplit(self.path).query).get("id",["0"])[0]))
+            types={".png":"image/png",".jpg":"image/jpeg",".jpeg":"image/jpeg",".gif":"image/gif",".webp":"image/webp"}
+            mime=types.get(Path(name).suffix.lower())
+            if not mime:raise ValueError("Not an image")
+            self.reply(200,raw,mime)
         elif path=="/api/documents/download":
             from urllib.parse import quote
             name,raw=documents.binary(DB,int(parse_qs(urlsplit(self.path).query).get("id",["0"])[0]))

@@ -163,7 +163,7 @@ def list_docs(path,q="",trash=False,where="",after=0):
     with closing(connect(path)) as db:
         query="SELECT id,node_id,name,folder,size,sha256,created,deleted,extract_status FROM documents d WHERE deleted IS "+("NOT NULL" if trash else "NULL")+" AND id>?"
         args=[after]
-        if where:query+=" AND folder=?";args.append(where)
+        if where:query+=" AND (folder=? OR substr(folder,1,length(?)+1)=?||\x27/\x27)";args.extend([where,where,where])
         terms=sorted(memory.terms(q))
         if terms:
             query+=" AND id IN (SELECT document_id FROM document_terms WHERE term IN ("+",".join("?" for _ in terms)+"))";args+=terms
@@ -208,6 +208,7 @@ def action(path,data):
             db.execute("DELETE FROM document_terms WHERE document_id=?",(r["id"],))
             db.executemany("INSERT OR IGNORE INTO document_terms VALUES(?,?)",((w,r["id"]) for w in memory.terms(r["name"]+" "+where+" "+r["content"]) if len(w)<=80))
         elif kind=="candidates" and not r["deleted"]:
+            if r["extract_status"]=="queued":raise ValueError("Дождитесь индексации")
             import cognitive
             count=0
             for line in r["content"].splitlines()[:1000]:

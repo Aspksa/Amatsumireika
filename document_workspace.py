@@ -44,6 +44,7 @@ def step(path):
             logging.exception("Document indexing failed")
             with closing(doc.connect(path)) as db,db:
                 db.execute("UPDATE document_jobs SET status='failed',updated=?,error='Файл недоступен или ошибка обработки' WHERE document_id=?",(doc.now(),ident))
+                db.execute("UPDATE documents SET extract_status='extraction_failed' WHERE id=?",(ident,))
         return True
     finally:LOCK.release()
 @contextmanager
@@ -139,7 +140,7 @@ def mutate(path,data):
             job=db.execute("SELECT status FROM document_jobs WHERE document_id=?",(ident,)).fetchone()
             if job and job[0]=="running":raise ValueError("Индексация уже выполняется")
             enqueue(db,ident)
-        elif action=="version":
+            db.execute("UPDATE documents SET extract_status='queued' WHERE id=?",(ident,))
             parent=data.get("parent")
             p=doc.get(db,parent)
             if parent==ident:raise ValueError("Выберите другой документ")
