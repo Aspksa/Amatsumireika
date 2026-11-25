@@ -51,6 +51,12 @@ def initialize():
                 temp=backup.with_suffix(".tmp")
                 with closing(sqlite3.connect(temp)) as dest: db.backup(dest)
                 temp.replace(backup)
+        if db.execute("PRAGMA user_version").fetchone()[0]<7 and memory.table(db,"nodes"):
+            backup=DB.with_name(DB.name+".before-v7.bak")
+            if not backup.exists():
+                temp=backup.with_suffix(".tmp")
+                with closing(sqlite3.connect(temp)) as dest:db.backup(dest)
+                temp.replace(backup)
         db.executescript("""
         CREATE TABLE IF NOT EXISTS nodes(id INTEGER PRIMARY KEY, title TEXT NOT NULL, category TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS edges(source INTEGER REFERENCES nodes(id), target INTEGER REFERENCES nodes(id), PRIMARY KEY(source,target), CHECK(source<target));
@@ -90,6 +96,7 @@ def initialize():
             db.execute("PRAGMA user_version=5")
         if db.execute("PRAGMA user_version").fetchone()[0]<6:
             db.execute("PRAGMA user_version=6")
+        if db.execute("PRAGMA user_version").fetchone()[0]<7:db.execute("PRAGMA user_version=7")
 
 def event(db, kind, detail):
     db.execute("INSERT INTO atlas_events(at,kind,detail) VALUES(?,?,?)",

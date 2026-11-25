@@ -157,7 +157,7 @@ def list_docs(path,q="",trash=False,where="",after=0):
     if not isinstance(q,str) or len(q)>300 or type(after) is not int or after<0:raise ValueError("Некорректный поиск")
     where=folder(where)
     with closing(connect(path)) as db:
-        query="SELECT * FROM documents d WHERE deleted IS "+("NOT NULL" if trash else "NULL")+" AND id>?"
+        query="SELECT id,node_id,name,folder,size,sha256,created,deleted,extract_status FROM documents d WHERE deleted IS "+("NOT NULL" if trash else "NULL")+" AND id>?"
         args=[after]
         if where:query+=" AND folder=?";args.append(where)
         terms=sorted(memory.terms(q))
@@ -194,7 +194,8 @@ def action(path,data):
         if kind=="trash" and not r["deleted"]:
             db.execute("UPDATE documents SET deleted=? WHERE id=?",(now(),r["id"]))
         elif kind=="restore" and r["deleted"]:
-            if not path_for(path,r["blob"]).is_file():raise ValueError("Файл отсутствует")
+            file=path_for(path,r["blob"])
+            if not file.is_file() or file.stat().st_size!=r["size"] or hashlib.sha256(file.read_bytes()).hexdigest()!=r["sha256"]:raise ValueError("Файл отсутствует или повреждён")
             db.execute("UPDATE documents SET deleted=NULL WHERE id=?",(r["id"],))
         elif kind=="move" and not r["deleted"]:
             where=folder(data.get("folder"))
@@ -204,7 +205,6 @@ def action(path,data):
             db.executemany("INSERT OR IGNORE INTO document_terms VALUES(?,?)",((w,r["id"]) for w in memory.terms(r["name"]+" "+where+" "+r["content"]) if len(w)<=80))
         elif kind=="candidates" and not r["deleted"]:
             import cognitive
-            before=db.total_changes
             count=0
             for line in r["content"].splitlines()[:1000]:
                 match=re.fullmatch(r"\s*(факт|событие|навык|привычка|предпочтение|причина|цель|запомни)\s*[:：]\s*(.+)",line,re.I)
@@ -218,7 +218,9 @@ def action(path,data):
             other=data.get("node")
             if type(other) is not int or other<=0 or other==r["node_id"]:raise ValueError("Укажите другую запись")
             if not db.execute("SELECT 1 FROM nodes WHERE id=?",(other,)).fetchone():raise ValueError("Запись не найдена")
-            db.execute("INSERT OR IGNORE INTO edges VALUES(?,?)",tuple(sorted((r["node_id"],other))))
+            if db.execute("SELECT 1 FROM documents WHERE node_id=? AND deleted IS NOT NULL",(other,)).fetchone():raise ValueError("Связанный документ в корзине")
+            changed=db.execute("INSERT OR IGNORE INTO edges VALUES(?,?)",tuple(sorted((r["node_id"],other)))).rowcount
+            if changed:db.execute("INSERT INTO atlas_events(at,kind,detail) VALUES(?,?,?)",(now(),"edge","Связь документа #"+str(r["node_id"])+" ↔ "+str(other)))
         else:raise ValueError("Недопустимая операция")
         event(db,r["id"],{"trash":"Документ в корзине","restore":"Документ восстановлен","move":"Документ перемещён","link":"Связь документа подтверждена"}[kind],r["node_id"])
         return {"ok":True}
@@ -231,7 +233,9 @@ def health(path):
                 f=path_for(path,r["blob"])
                 if not f.is_file() or f.stat().st_size!=r["size"]:missing.append(r["id"])
             except (OSError,ValueError):missing.append(r["id"])
-        return {"files":len(rows),"missing":missing}
+        known={r["blob"] for r in rows}
+        orphaned=sum(1 for item in root(path).iterdir() if item.is_file() and re.fullmatch(r"[a-f0-9]{32}",item.name) and item.name not in known)
+        return {"files":len(rows),"missing":missing,"orphaned":orphaned}
 
 def by_node(path,node):
     with closing(connect(path)) as db:

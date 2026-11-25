@@ -54,7 +54,7 @@ class Integrity61Test(unittest.TestCase):
         with closing(server.connect()) as db,db:db.execute("PRAGMA user_version=5")
         server.initialize()
         self.assertTrue(self.path.with_name(self.path.name+".before-v6.bak").exists())
-        with closing(server.connect()) as db:self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0],6)
+        with closing(server.connect()) as db:self.assertGreaterEqual(db.execute("PRAGMA user_version").fetchone()[0],6)
 
     def test_indexed_and_unindexed_search(self):
         a=server.add_node("Старый документ","Документы","Механика")
