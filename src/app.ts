@@ -389,7 +389,9 @@ function cinemaDraw(c:CanvasRenderingContext2D,now:number,d:Date,dt:number,budge
  const sec=d.getSeconds()+d.getMilliseconds()/1000,min=d.getMinutes()+sec/60;
  const gold=paper()?"#80550f":"#ffd17a",light=paper()?"#586779":"#f5eee1",muted=paper()?"#a58d62":"#a9854b";
  const a=-Math.PI/2+tau*sec/60,inner=timeInner(detailMonth!==null);
- cinemaRing(c,inner-5,-Math.PI/2,a,gold,.9,.88);
+ // A single readable track at every second, including zero and reduced motion.
+ cinemaRing(c,inner-5,0,tau,muted,1.25,.78);
+ cinemaRing(c,inner-5,-Math.PI/2,a,gold,1.35,.94);
 
  const minuteTip=timePoint(-Math.PI/2+tau*min/60,inner-5);c.fillStyle=light;c.beginPath();c.arc(minuteTip.x,minuteTip.y,1.35,0,tau);c.fill();
  const p=timePoint(a,inner-5);c.fillStyle=gold;c.beginPath();c.arc(p.x,p.y,2,0,tau);c.fill();
@@ -591,7 +593,7 @@ function drawYear(now=chronosNow()){
  const point=(angle:number,r:number)=>({x:center+Math.cos(angle)*r,y:center+Math.sin(angle)*r});
  function stroke(a:number,b:number,r:number,color:string,w:number){c.beginPath();c.arc(center,center,r,a,b);c.strokeStyle=color;c.lineWidth=w;c.stroke()}
  // Minimal inner clock rings; no competing outer numeric scales.
- stroke(0,tau,inner-5,base,.55);
+ // The independent clock layer draws the single track and progress.
  const actual=dayKey(now),liveMonth=now.getMonth(),liveWeek=weekStartKey(now),contours:Point[][]=Array.from({length:12},()=>[]);
  for(let i=0;i<days.length;i++){
   const d=days[i],key=dayKey(d),angle=spiralAngle(i,days.length),passed=key<=today,w=monthWeek(d);
