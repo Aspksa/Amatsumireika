@@ -15,9 +15,10 @@ class Element {
   replaceChildren(...children){this.children=children}
   addEventListener(){}
   setAttribute(){}
+  removeAttribute(){}
   querySelector(){return new Element()}
   getBoundingClientRect(){return this.id==='right'?{left:830,top:0,width:278,height:1020}:{left:0,top:0,width:1108,height:1020}}
-  getContext(){return new Proxy({}, {get:(o,k)=>o[k]??(()=>{}),set:(o,k,v)=>{o[k]=v;return true}})}
+  getContext(){return new Proxy({}, {get:(o,k)=>o[k]??(k==="createRadialGradient"?(()=>({addColorStop(){}})):(()=>{})),set:(o,k,v)=>{o[k]=v;return true}})}
   focus(){}
 }
 const els=new Map();
@@ -67,6 +68,25 @@ assert.equal(timeGeometry("projection",2027,null).length,365);
 assert.notEqual(timeShapePoint("projection",1,365,2027,true).x,timeShapePoint("projection",1,365,2028,true).x);
 assert.ok(timeGeometryCache.size<=32);
 setTimeShape("dna");assert.equal(timeShape,"dna");assert.equal(interpolatedRays(2027,performance.now()).length,365);
+assert.equal(cinemaBudget("auto",2,2,false).fps,15);
+assert.equal(cinemaBudget("cinema",12,2,false).fps,60);
+assert.equal(cinemaBudget("off",12,2,false).count,0);
+assert.equal(cinemaBudget("cinema",12,2,true).count,0);
+assert.equal(cinemaBudget("cinema",12,0,false).fps,15);
+const spark={x:10,y:20,vx:12,vy:0,life:1,max:1,size:1,hue:0};
+assert.ok(stepCinemaParticle(spark,.05,{x:160,y:160}));
+assert.ok(Number.isFinite(spark.x)&&Number.isFinite(spark.y));
+assert.ok(spark.life<1);
+assert.equal(cinemaClamp(100,0,1),1);
+assert.match(cinemaColor(8),/^#[0-9a-f]{6}$/i);
+const lp=cinemaLens({x:180,y:160},{x:0,y:0},.16);assert.ok(lp.x>180&&lp.y===160);
+expanded=false;presentation=false;chooseCalendarYear(2027,new Date(2027,1,20,12));cinemaMode="cinema";cinemaPower=.72;
+for(const shape of timeShapes){timeShape=shape;oldShape=shape;cinemaDraw(wheelCtx,performance.now(),new Date(2027,1,20,12),.016,cinemaBudget("cinema",12,2,false))}
+assert.ok(cinemaSprites.size<=16);
+assert.ok(cinemaSparks.length<=180);
+assert.equal(cinemaOnscreen(),true);expanded=true;assert.equal(cinemaOnscreen(),false);
+startTimePlayback("year",true);assert.equal(playbackDays[0],"2027-12-31");stopTimePlayback();assert.equal(playbackRunning,false);
+console.log("Cinematic budgets, draw smoke, reduced motion, particle physics and color interpolation: OK");
 console.log("Production calendar 2026/2027, month drilldown, norms and midnight rollover: OK");
 console.log("Atlas runtime geometry: 100000 records, 250 folders, 6 modes; OK");
 `,ctx,{timeout:30000});
