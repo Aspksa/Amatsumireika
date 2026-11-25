@@ -112,6 +112,41 @@ class AtlasTest(unittest.TestCase):
             self.assertIn("не принято",server.refresh_calendars()["status"])
         self.assertEqual(len(server.get_calendars()["calendars"]),2)
 
+    def test_work_ledger_and_timeline(self):
+        import io
+        import zipfile
+        from xml.etree import ElementTree
+        from datetime import datetime, timezone, timedelta
+        server.load_bundled_calendars()
+        profiles=server.save_profile({"name":"=Test <1>","schedule":"5/2","anchor":"2026-01-01","hours":8})
+        pid=profiles[0]["id"]
+        report=server.save_work_day({"profile_id":pid,"day":"2027-02-20","actual":9,"planned":None,"status":"normal"})
+        row=next(r for r in report["rows"] if r["day"]=="2027-02-20")
+        self.assertEqual((row["planned"],row["actual"],row["difference"]),(7,9,2))
+        self.assertEqual(next(r for r in report["rows"] if r["day"]=="2027-02-22")["planned"],0)
+        for schedule in ("2/2","6/1","shift"):
+            server.save_profile({"name":schedule,"schedule":schedule,"anchor":"2027-02-01","hours":12})
+        report=server.work_report("2027-02")
+        self.assertEqual(len(report["rows"]),112)
+        self.assertEqual(next(r for r in report["rows"] if r["name"]=="shift")["planned"],None)
+        with self.assertRaises(ValueError):
+            server.save_work_day({"profile_id":pid,"day":"2027-02-30","actual":8})
+        with zipfile.ZipFile(io.BytesIO(server.report_xlsx("2027-02"))) as z:
+            root=ElementTree.fromstring(z.read("xl/worksheets/sheet1.xml"))
+            self.assertFalse(any(el.tag.endswith("}f") for el in root.iter()))
+            self.assertIn("=Test &lt;1&gt;",z.read("xl/worksheets/sheet1.xml").decode())
+        server.add_node("Knowledge","Знания")
+        server.send_chat("private")
+        now=datetime.now(timezone.utc)
+        result=server.timeline_window((now-timedelta(minutes=1)).isoformat(),(now+timedelta(minutes=1)).isoformat())
+        self.assertEqual(result["counts"]["nodes"],1)
+        self.assertEqual(result["counts"]["chats"],1)
+        self.assertNotIn("private",str(result))
+        server.save_time_snapshot({"day":"2027-02-20","mode":"spiral"})
+        server.initialize()
+        self.assertEqual(server.get_time_snapshots()[0]["nodes"],1)
+        self.assertEqual(len(server.get_profiles()),4)
+
     def test_invalid(self):
         with self.assertRaises(ValueError):
             server.add_node("","Знания")
