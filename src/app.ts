@@ -326,7 +326,7 @@ function geometryDates(y:number){let result=timeDateCache.get(y);if(!result){res
 function timeReference(now:Date){return historyDate?new Date(historyDate+"T12:00:00"):now}
 function timePoint(a:number,r:number):Point{return{x:160+Math.cos(a)*r,y:160+Math.sin(a)*r}}
 // One open radial spiral, advancing counterclockwise so its silhouette descends clockwise.
-const spiralInner=60;
+const spiralInner=68;
 function timeInner(detail:boolean){return detail?73:spiralInner}
 function spiralAngle(i:number,n:number){return -Math.PI/2-tau*(i+.5)/n}
 function spiralIndex(x:number,y:number,n:number){const a=(-Math.atan2(y,x)-Math.PI/2+tau)%tau;return Math.min(n-1,Math.floor(a/tau*n))}
@@ -390,7 +390,8 @@ function cinemaDraw(c:CanvasRenderingContext2D,now:number,d:Date,dt:number,budge
  const gold=paper()?"#80550f":"#ffd17a",light=paper()?"#586779":"#f5eee1",muted=paper()?"#a58d62":"#a9854b";
  const a=-Math.PI/2+tau*sec/60,inner=timeInner(detailMonth!==null);
  cinemaRing(c,inner-4,-Math.PI/2,a,gold,1.5);
- cinemaRing(c,inner-8,-Math.PI/2,-Math.PI/2+tau*min/60,light,.8,.85);
+ cinemaRing(c,inner-8,-Math.PI/2,-Math.PI/2+tau*min/60,light,1.05,.88);
+ const minuteTip=timePoint(-Math.PI/2+tau*min/60,inner-8);c.fillStyle=light;c.beginPath();c.arc(minuteTip.x,minuteTip.y,1.35,0,tau);c.fill();
  cinemaRing(c,inner-12,-Math.PI/2,-Math.PI/2+tau*hr/12,muted,.7,.7);
  const p=timePoint(a,inner-4);c.fillStyle=gold;c.beginPath();c.arc(p.x,p.y,2,0,tau);c.fill();
  const rays=timeGeometry(displayedYear(d),detailMonth);
@@ -404,8 +405,8 @@ function cinemaDraw(c:CanvasRenderingContext2D,now:number,d:Date,dt:number,budge
  const lf=(now-chronosLinkAt)/650,linked=lf>=0&&lf<1?rays.find(v=>dayKey(v.d)===chronosLinkDate):undefined;
  if(linked&&lf>=0&&lf<1){const t=eased(lf),q={x:linked.p.x+(linked.q.x-linked.p.x)*t,y:linked.p.y+(linked.q.y-linked.p.y)*t};cinemaGlow(c,q.x,q.y,7,gold,Math.sin(Math.PI*lf)*power);cinemaLine(c,linked.p,q,gold,1.8,(1-lf)*power)}
  cinemaYearTransition(c,now,power);
- cinemaWave(c,now,cinemaRevealAt,650,gold,inner-1,inner+(detailMonth===null?108:66),.36*power);
- cinemaWave(c,now,cinemaBirthAt,900,gold,inner,inner+(detailMonth===null?112:70),.3*power);
+ cinemaWave(c,now,cinemaRevealAt,650,gold,inner-1,inner+(detailMonth===null?132:66),.36*power);
+ cinemaWave(c,now,cinemaBirthAt,900,gold,inner,inner+(detailMonth===null?136:70),.3*power);
  seasonalHighlights(c,filled,phase,budget,power);
  cinemaGlow(c,p.x,p.y,7,gold,.65*power);
  if(filled.length){
@@ -466,10 +467,10 @@ function calendarRayLength(d:Date,detail=false){
  if(detail)return 3+63*Math.pow((w.index+1)/w.count,2.1);
  // Stronger month steps, gentler weekly shelves: the yearly fan grows almost linearly.
  const progress=(m+.35+.65*(w.index+1)/w.count)/12;
- return 8+100*Math.pow(progress,1.18);
+ return 10+122*Math.pow(progress,1.10);
 }
 // Longer annual rays with room for full outward-facing month labels.
-const annualTimeSide=440;
+const annualTimeSide=480;
 function timeViewSide(detail:boolean){return detail?320:annualTimeSide}
 function timeCanvasTransform(c:CanvasRenderingContext2D,size:number,detail:boolean){
  const scale=size/timeViewSide(detail),offset=size/2-160*scale;
@@ -479,14 +480,48 @@ function timePointer(clientX:number,clientY:number,rect:{left:number;top:number;
  const side=timeViewSide(detail);
  return {x:(clientX-rect.left)/Math.max(1,rect.width)*side-side/2,y:(clientY-rect.top)/Math.max(1,rect.height)*side-side/2};
 }
-function monthLabelLayout(y:number,m:number){
- const days=geometryDates(y),first=days.findIndex(d=>d.getMonth()===m),last=new Date(y,m+1,0,12),n=last.getDate();
- const angle=-Math.PI/2-(first+n/2)*tau/days.length,radius=spiralInner+calendarRayLength(last)+7;
- const ux=Math.cos(angle),uy=Math.sin(angle),edge=annualTimeSide/2-4,halfHeight=7;
- const limit=Math.min((edge-halfHeight*Math.abs(uy))/Math.max(.00001,Math.abs(ux)),(edge-halfHeight*Math.abs(ux))/Math.max(.00001,Math.abs(uy)));
- const width=Math.min(70,limit-radius);
- return {angle,radius,width,ux,uy,label:fullMonthNames[m]};
+type MonthLabel={angle:number;radius:number;width:number;ux:number;uy:number;label:string;fontSize:number};
+const monthLabelCache=new Map<number,MonthLabel[]>();
+function labelCorners(l:MonthLabel,pad=0):Point[]{
+ return [l.radius-pad,l.radius+l.width+pad].flatMap(r=>[-7-pad,7+pad].map(t=>({x:r*l.ux-t*l.uy,y:r*l.uy+t*l.ux})));
 }
+function labelsOverlap(a:MonthLabel,b:MonthLabel,pad=1){
+ const ac=labelCorners(a,pad),bc=labelCorners(b,pad);
+ for(const axis of [{x:a.ux,y:a.uy},{x:-a.uy,y:a.ux},{x:b.ux,y:b.uy},{x:-b.uy,y:b.ux}]){
+  const p=ac.map(v=>v.x*axis.x+v.y*axis.y),q=bc.map(v=>v.x*axis.x+v.y*axis.y);
+  if(Math.max(...p)<=Math.min(...q)||Math.max(...q)<=Math.min(...p))return false;
+ }
+ return true;
+}
+function monthLabelLayouts(y:number){
+ const cached=monthLabelCache.get(y);if(cached)return cached;
+ const days=geometryDates(y),placed:MonthLabel[]=[];
+ for(let m=0;m<12;m++){
+  const first=days.findIndex(d=>d.getMonth()===m),last=new Date(y,m+1,0,12),n=last.getDate(),base=-Math.PI/2-(first+n/2)*tau/days.length,tip=spiralInner+calendarRayLength(last),label=fullMonthNames[m];
+  const candidate=(shift:number,gutter:number,fontSize:number):MonthLabel=>{
+   const angle=base+shift,ux=Math.cos(angle),uy=Math.sin(angle),radius=tip+8+gutter,edge=annualTimeSide/2-4;
+   const limit=Math.min((edge-7*Math.abs(uy))/Math.max(.00001,Math.abs(ux)),(edge-7*Math.abs(ux))/Math.max(.00001,Math.abs(uy)));
+   return {angle,radius,width:Math.min(Math.max(30,label.length*fontSize*.78),70,limit-radius),ux,uy,label,fontSize};
+  };
+  let best=candidate(0,0,12);
+  outer:for(const font of [12,11,10,9])for(const gutter of [0,3,6])for(const shift of [0,.035,-.035,.07,-.07]){
+   const v=candidate(shift,gutter,font);
+   if(v.width>=30&&!placed.some(p=>labelsOverlap(p,v))){best=v;break outer}
+  }
+  placed.push(best);
+ }
+ if(monthLabelCache.size>=8)monthLabelCache.delete(monthLabelCache.keys().next().value!);
+ monthLabelCache.set(y,placed);return placed;
+}
+function monthLabelLayout(y:number,m:number){return monthLabelLayouts(y)[m]}
+function rayStrokeWidth(inner:number,tip:number,step:number,detail:boolean){return Math.min(detail?4.4:1.6,Math.max(.55,(inner+tip)*.5*step*.77))}
+function relativeLuminance(hex:string){
+ const v=parseInt(hex.slice(1),16),linear=(x:number)=>{const c=x/255;return c<=.04045?c/12.92:Math.pow((c+.055)/1.055,2.4)};
+ return .2126*linear((v>>16)&255)+.7152*linear((v>>8)&255)+.0722*linear(v&255);
+}
+function contrastRatio(a:string,b:string){const x=relativeLuminance(a),y=relativeLuminance(b);return (Math.max(x,y)+.05)/(Math.min(x,y)+.05)}
+function readableSeason(m:number,dark:boolean){const bg=dark?"#08121b":"#f2f0e8",base=seasonPaint(m,dark);for(let i=0;i<=20;i++){const col=mixHex(base,dark?"#ffffff":"#000000",i/20);if(contrastRatio(col,bg)>=4.5)return col}return dark?"#ffffff":"#000000"}
+function weekStartKey(d:Date){const start=new Date(d.getFullYear(),d.getMonth(),d.getDate(),12);start.setDate(start.getDate()-(start.getDay()+6)%7);return dayKey(start)}
 function calendarHit(x:number,y:number,days:Date[],detail:boolean){
  const r=Math.hypot(x,y),inner=timeInner(detail);if(r<inner-2||!days.length||Math.max(Math.abs(x),Math.abs(y))>timeViewSide(detail)/2)return null;
  const date=days[spiralIndex(x,y,days.length)],tip=inner+calendarRayLength(date,detail);
@@ -562,17 +597,18 @@ function drawYear(now=chronosNow()){
  // Minimal inner clock rings; no competing outer numeric scales.
  stroke(0,tau,inner-4,base,.65);
  for(let i=0;i<60;i++){const a=-Math.PI/2+i*tau/60;cinemaLine(c,point(a,inner-10),point(a,inner-(i%5===0?15:12)),i%5===0?gold:base,i%5===0?1:.5,.85)}
- const actual=dayKey(now),liveMonth=now.getMonth(),liveWeek=monthWeek(now).index;
+ const actual=dayKey(now),liveMonth=now.getMonth(),liveWeek=weekStartKey(now),contours:Point[][]=Array.from({length:12},()=>[]);
  for(let i=0;i<days.length;i++){
   const d=days[i],key=dayKey(d),angle=spiralAngle(i,days.length),passed=key<=today,w=monthWeek(d);
   const length=calendarRayLength(d,detailMonth!==null)*(birth&&key===birthKey?Math.max(.02,eased(elapsed/800)):1),tip=inner+length;
   const p=point(angle,inner),q=point(angle,tip),col=seasonalRayColor(d,dark);
-  const currentWeek=y===now.getFullYear()&&d.getMonth()===liveMonth&&w.index===liveWeek;
-  metalRay(c,p,q,col,dark,passed,detailMonth===null?1.05:4.4);
+  const currentWeek=weekStartKey(d)===liveWeek;
+  metalRay(c,p,q,col,dark,passed,rayStrokeWidth(inner,tip,step,detailMonth!==null));
+  contours[d.getMonth()].push(q);
   // A continuous weekly shelf, with a narrow separator at each week and month boundary.
   const prior=i?days[i-1]:null;
   const newMonth=!prior||prior.getMonth()!==d.getMonth(),newWeek=newMonth||monthWeek(prior!).index!==w.index;
-  if(newWeek){const a=angle+step/2;cinemaLine(c,point(a,inner+1),point(a,tip),dark?"#080e15":"#f2f0e8",newMonth?1.9:1.05,.95)}
+  if(newWeek){const a=angle+step/2;cinemaLine(c,point(a,inner+1),point(a,tip),dark?"#080e15":"#f2f0e8",newMonth?2.6:.85,.95)}
   if(currentWeek)stroke(angle-step*.48,angle+step*.48,tip+2,gold,.9);
   if(key===actual||key===selected){
    const active=key===actual,k=point(angle,tip+3);
@@ -581,10 +617,12 @@ function drawYear(now=chronosNow()){
   }
  }
  if(detailMonth===null){
+  // A thin rounded exterior contour follows the ray tips without bridging month boundaries.
+  for(let m=0;m<12;m++){const pts=contours[m];if(pts.length<2)continue;c.beginPath();c.moveTo(pts[0].x,pts[0].y);for(let i=1;i<pts.length-1;i++){const q=pts[i],n=pts[i+1];c.quadraticCurveTo(q.x,q.y,(q.x+n.x)/2,(q.y+n.y)/2)}c.lineTo(pts[pts.length-1].x,pts[pts.length-1].y);c.strokeStyle=readableSeason(m,dark);c.globalAlpha=.58;c.lineWidth=.85;c.stroke();c.globalAlpha=1}
   for(let m=0;m<12;m++){
    const label=monthLabelLayout(y,m),current=y===now.getFullYear()&&m===liveMonth;
    // Text extends away from each month band; flip the left half for upright reading.
-   radialLabel(c,label.label,label.angle,label.radius,current?gold:seasonPaint(m,dark),(current?"700 ":"550 ")+"11px Inter, Segoe UI, sans-serif",label.width);
+   radialLabel(c,label.label,label.angle,label.radius,current?gold:readableSeason(m,dark),(current?"700 ":"550 ")+label.fontSize+"px Inter, Segoe UI, sans-serif",label.width);
   }
  }else{
   // Day numbers appear only after deliberate month drilldown.
@@ -617,15 +655,15 @@ function monthDayKind(d:Date):DayType{
 }
 function renderMonthGrid(current:Date,now:Date){
  const y=current.getFullYear(),m=current.getMonth(),selected=dayKey(current),today=dayKey(now),root=$("month-grid");
- text($("month-heading"),current.toLocaleDateString("ru-RU",{month:"long",year:"numeric"}));$("spiral-tooltip").hidden=true;
+ text($("month-heading"),fullMonthNames[m]+" "+y+" г.");$("spiral-tooltip").hidden=true;
  const dateLabel=(d:Date)=>d.toLocaleDateString("ru-RU",{day:"numeric",month:"long",year:"numeric"});
  text($("chrono-today-label"),"Сегодня: "+dateLabel(now));text($("chrono-selected-label"),"Выбрано: "+dateLabel(current));
  const signature=[selected,today,JSON.stringify(productionRules[y]??null),detailMonth].join("|");
  if(signature===chronosRenderKey)return;
  $<HTMLInputElement>("chrono-jump").value=selected;chronosPreview("");
  const prev=root.querySelector<HTMLElement>(".is-selected"),previousRect=prev?.getBoundingClientRect();chronosRenderKey=signature;
- $("left").style.setProperty("--chrono-season-dark",seasonPaint(m,true));$("left").style.setProperty("--chrono-season-paper",seasonPaint(m,false));
- $("month-heading").setAttribute("aria-pressed",String(detailMonth!==null));$("month-heading").style.setProperty("--season-dark",seasonPaint(m,true));$("month-heading").style.setProperty("--season-light",seasonPaint(m,false));
+ $("left").style.setProperty("--chrono-season-dark",readableSeason(m,true));$("left").style.setProperty("--chrono-season-paper",readableSeason(m,false));
+ $("month-heading").setAttribute("aria-pressed",String(detailMonth!==null));$("month-heading").style.setProperty("--season-dark",readableSeason(m,true));$("month-heading").style.setProperty("--season-light",readableSeason(m,false));
  text($("month-rule-notice"),productionRules[y]?"":"Переносы на этот год не загружены; показаны обычные выходные и фиксированные праздники.");
  $<HTMLButtonElement>("month-prev").disabled=y===2026&&m===0;
  $<HTMLButtonElement>("month-next").disabled=y===2100&&m===11;
@@ -635,6 +673,7 @@ function renderMonthGrid(current:Date,now:Date){
   const k=dayKey(d),b=document.createElement("button");b.type="button";b.className="month-day";
   const kind=monthDayKind(d);b.classList.add("kind-"+kind);b.setAttribute("data-date",k);
   if(k<today)b.classList.add("is-past");
+  if(weekStartKey(d)===weekStartKey(now))b.classList.add("is-current-week");
   if(k===today){b.classList.add("is-today");b.setAttribute("aria-current","date")}
   if(k===selected)b.classList.add("is-selected");
   b.setAttribute("aria-pressed",String(k===selected));const kindLabel=productionRules[y]?dayNames[kind]:kind==="holiday"?"Фиксированный праздник":kind==="weekend"?"Обычный выходной":"Предварительно рабочий день";
