@@ -201,7 +201,6 @@ main:not(.expanded) #left{padding:clamp(6px,1vw,16px);justify-content:center;gap
 
 /* Singularity — separate lightweight overlay, no panels or visual frames. */
 #time-overlay{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1}#year-wheel{position:relative;z-index:0}.chrono-clock{z-index:2}
-.time-shape-select{display:flex;justify-content:center}.time-shape-select select{background:transparent;color:var(--muted);font:10px var(--mono);padding:3px}
 .time-actions{display:flex;flex-wrap:wrap;gap:5px;margin:7px 0}.time-actions button,.time-actions a{background:var(--surface);border:0;color:var(--accent);font:10px var(--mono);padding:5px;text-decoration:none}
 #time-history-status,#time-biography,#time-performance,#work-message{font:10px/1.5 var(--mono);color:var(--muted);overflow-wrap:anywhere;margin:6px 0}
 #time-memory,#time-snapshots,#work-table{max-height:160px;overflow:auto;font-size:10px}#time-memory p{margin:3px 0}
@@ -249,3 +248,13 @@ main:not(.expanded) #left{justify-content:flex-start;align-items:stretch;padding
 #stage.core-working #core-open{outline:2px solid var(--accent);outline-offset:8px;animation:coreWork 1.4s ease-in-out infinite}
 @keyframes coreWork{50%{outline-offset:16px;outline-color:transparent}}
 @media(prefers-reduced-motion:reduce){#stage.core-working #core-open{animation:none}}
+
+/* Single spiral: full weekday and date, high-contrast clock. */
+.chrono-wheel{background:radial-gradient(circle at 50% 50%,#b9985010 0,transparent 46%)}
+.chrono-clock{width:44%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px}
+.chrono-clock #clock{font:700 clamp(15px,8.2cqw,36px)/1.08 var(--mono);letter-spacing:-.065em;color:#fff0ca;text-shadow:0 0 10px #eac27540}
+#clock-date{font:600 clamp(10px,4.1cqw,18px)/1.25 var(--sans);color:var(--ink);margin:0;white-space:nowrap}
+#clock-weekday{font:650 clamp(10px,3.9cqw,17px)/1.25 var(--sans);color:#ffd17a;text-transform:capitalize;white-space:nowrap}
+#year-progress{font:500 clamp(9px,3cqw,13px)/1.2 var(--mono);color:var(--muted);margin-top:1px}
+:root.paper .chrono-clock #clock,:root.paper #clock-weekday{color:#80550f;text-shadow:none}
+@media(prefers-reduced-motion:reduce){.chrono-clock #clock{text-shadow:none}}

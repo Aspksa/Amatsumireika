@@ -34,6 +34,9 @@ async function main(){
   assert.ok(a.width>100&&Math.abs(a.width-a.height)<2,"square visible canvas "+JSON.stringify(a));
   assert.ok(a.top>=0&&a.top<25,"wheel top-aligned "+a.top);
   assert.ok(a.clockCenter<3,"clock horizontally centered");
+  assert.equal(await evaluate('document.querySelector("#time-shape")===null'),true);
+  assert.equal(await evaluate('document.querySelector("#clock-weekday").textContent'),await evaluate('new Date().toLocaleDateString("ru-RU",{weekday:"long"})'));
+  assert.equal(await evaluate('document.querySelector("#clock-date").textContent'),await evaluate('new Date().toLocaleDateString("ru-RU",{day:"numeric",month:"long"})'));
   assert.equal(a.homeDetails,0);assert.equal(a.yearButtons,0);assert.equal(a.year,a.localYear);
   assert.ok(a.lit>80&&b.lit>80,"visible non-transparent pixels");
   assert.ok(b.frame>a.frame+3&&a.hash!==b.hash,"Canvas actually changes");

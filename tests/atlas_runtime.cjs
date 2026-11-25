@@ -21,7 +21,7 @@ class Element {
   getContext(){return new Proxy({}, {get:(o,k)=>o[k]??(k==="createRadialGradient"?(()=>({addColorStop(){}})):(()=>{})),set:(o,k,v)=>{o[k]=v;return true}})}
   focus(){}
 }
-const html=fs.readFileSync("index.html","utf8");const home=html.slice(html.indexOf('<aside id="left"'),html.indexOf('<section id="stage"'));for(const unwanted of ["year-2026","year-auto","year-2027","day-events","calendar-refresh","time-history-status","cinema-mode","work-panel"])assert.ok(!home.includes('id="'+unwanted+'"'),"Removed from home: "+unwanted);
+const html=fs.readFileSync("index.html","utf8");const home=html.slice(html.indexOf('<aside id="left"'),html.indexOf('<section id="stage"'));for(const unwanted of ["time-shape","year-2026","year-auto","year-2027","day-events","calendar-refresh","time-history-status","cinema-mode","work-panel"])assert.ok(!home.includes('id="'+unwanted+'"'),"Removed from home: "+unwanted);
 const els=new Map();
 const document={getElementById:id=>{if(!els.has(id))els.set(id,new Element(id));return els.get(id)},createElement:()=>new Element(),createTextNode:s=>s,querySelectorAll:()=>[],addEventListener(){},documentElement:new Element(),body:new Element()};
 const ctx=vm.createContext({document,innerWidth:1108,devicePixelRatio:1,performance,matchMedia:()=>({matches:true}),ResizeObserver:class {observe(){}},requestAnimationFrame(){},setInterval(){},fetch:()=>new Promise(()=>{}),assert,console});
@@ -63,12 +63,11 @@ chooseCalendarYear(2027,new Date(2027,1,20,12));openCalendarMonth(1,new Date(202
 assert.ok(rayLength(364,365)>rayLength(0,365));
 assert.equal(eased(0),0);assert.equal(eased(1),1);
 lastWall=10000;lastMono=1000;checkClock(new Date(1000),2000);assert.ok(clockNotice.length>0);
-for(const shape of timeShapes){const rays=timeGeometry(shape,2027,null);assert.equal(rays.length,365);assert.ok(rays.every(r=>Number.isFinite(r.p.x)&&Number.isFinite(r.q.y)));assert.equal(timeGeometry(shape,2027,1).length,28)}
-assert.equal(timeGeometry("spiral",2028,null).length,366);
-assert.equal(timeGeometry("projection",2027,null).length,365);
-assert.notEqual(timeShapePoint("projection",1,365,2027,true).x,timeShapePoint("projection",1,365,2028,true).x);
-assert.ok(timeGeometryCache.size<=32);
-setTimeShape("dna");assert.equal(timeShape,"dna");assert.equal(interpolatedRays(2027,performance.now()).length,365);
+const spiral=timeGeometry(2027,null);
+assert.equal(spiral.length,365);assert.equal(timeGeometry(2027,1).length,28);assert.equal(timeGeometry(2028,null).length,366);
+for(const [i,v] of spiral.entries()){assert.ok(Number.isFinite(v.q.x)&&Number.isFinite(v.q.y));assert.equal(spiralIndex(v.q.x-160,v.q.y-160,spiral.length),i)}
+assert.ok(Math.hypot(spiral[364].q.x-160,spiral[364].q.y-160)>Math.hypot(spiral[0].q.x-160,spiral[0].q.y-160));
+assert.ok(timeGeometryCache.size<=32);assert.equal(timeShape,"spiral");
 assert.equal(cinemaBudget("auto",2,2,false).fps,15);
 assert.equal(cinemaBudget("cinema",12,2,false).fps,60);
 assert.equal(cinemaBudget("off",12,2,false).count,0);
@@ -82,7 +81,7 @@ assert.equal(cinemaClamp(100,0,1),1);
 assert.match(cinemaColor(8),/^#[0-9a-f]{6}$/i);
 const lp=cinemaLens({x:180,y:160},{x:0,y:0},.16);assert.ok(lp.x>180&&lp.y===160);
 expanded=false;presentation=false;chooseCalendarYear(2027,new Date(2027,1,20,12));cinemaMode="cinema";cinemaPower=.72;
-for(const shape of timeShapes){timeShape=shape;oldShape=shape;cinemaDraw(wheelCtx,performance.now(),new Date(2027,1,20,12),.016,cinemaBudget("cinema",12,2,false))}
+cinemaDraw(wheelCtx,performance.now(),new Date(2027,1,20,12),.016,cinemaBudget("cinema",12,2,false));
 assert.ok(cinemaSprites.size<=16);
 assert.ok(cinemaSparks.length<=180);
 assert.equal(cinemaOnscreen(),true);expanded=true;assert.equal(cinemaOnscreen(),false);
