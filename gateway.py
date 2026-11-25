@@ -11,6 +11,7 @@ from threading import Lock, Thread
 from urllib.request import Request, build_opener
 from urllib.error import HTTPError, URLError
 import cloud_api
+import cognitive
 from pathlib import Path
 import budget
 
@@ -177,6 +178,7 @@ def run_job(path,ident,key,model,prompt,mode):
             db.execute("UPDATE cloud_jobs SET status='running' WHERE id=?",(ident,))
             db.execute("UPDATE cloud_config SET requests=requests+1,generation_requests=generation_requests+1 WHERE id=1")
         messages=[{"role":"system","content":"You are Amatsumireika, a helpful assistant. Answer the user's request. Never claim access to local data unless provided."}]
+        messages[0]["content"]+=cognitive.system_profile(path,prompt)
         # Include only previous explicitly authorized Cloud.ru chat turns, not local memory.
         if mode=="chat":
             with closing(db_open(path)) as db:

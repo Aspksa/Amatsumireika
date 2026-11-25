@@ -135,7 +135,8 @@ def main():
             if not args.no_open:
                 Thread(target=open_browser, args=(url,), daemon=True).start()
             try:
-                http.serve_forever()
+                with server.cognitive.worker(server.DB):
+                    http.serve_forever()
             except KeyboardInterrupt:
                 LOG.info("Server stopped.")
         return 0
