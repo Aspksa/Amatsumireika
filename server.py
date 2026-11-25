@@ -45,7 +45,7 @@ def event(db, kind, detail):
                (datetime.now(timezone.utc).isoformat(), kind, detail))
 
 # Only reviewed manifests in this project's canonical repository are accepted.
-CALENDAR_FEED = "https://raw.githubusercontent.com/Aspksa/Amatsumireika/main/data/production-calendar.json"
+CALENDAR_FEED = "https://raw.githubusercontent.com/Aspksa/Amatsumireika/main/calendar/production-calendar.json"
 CALENDAR_LOCK = Lock()
 HOLIDAYS = {"01-01","01-02","01-03","01-04","01-05","01-06","01-07","01-08","02-23","03-08","05-01","05-09","06-12","11-04"}
 
