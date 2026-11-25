@@ -1,5 +1,7 @@
 """Local-only atlas API and static frontend; no third-party Python packages."""
 import argparse
+import math
+from datetime import datetime, timezone
 import json
 import sqlite3
 import webbrowser
@@ -24,9 +26,48 @@ def initialize():
         CREATE TABLE IF NOT EXISTS nodes(id INTEGER PRIMARY KEY, title TEXT NOT NULL, category TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS edges(source INTEGER REFERENCES nodes(id), target INTEGER REFERENCES nodes(id), PRIMARY KEY(source,target), CHECK(source<target));
         """)
+        db.execute("CREATE TABLE IF NOT EXISTS ui_settings(id INTEGER PRIMARY KEY CHECK(id=1), payload TEXT NOT NULL)")
+        db.execute("CREATE TABLE IF NOT EXISTS atlas_events(id INTEGER PRIMARY KEY, at TEXT NOT NULL, kind TEXT NOT NULL, detail TEXT NOT NULL)")
         columns = {r[1] for r in db.execute("PRAGMA table_info(nodes)")}
         if "folder" not in columns:
             db.execute("ALTER TABLE nodes ADD COLUMN folder TEXT NOT NULL DEFAULT ''")
+
+def event(db, kind, detail):
+    db.execute("INSERT INTO atlas_events(at,kind,detail) VALUES(?,?,?)",
+               (datetime.now(timezone.utc).isoformat(), kind, detail))
+
+def get_settings():
+    with closing(connect()) as db:
+        row = db.execute("SELECT payload FROM ui_settings WHERE id=1").fetchone()
+        return json.loads(row[0]) if row else {}
+
+def save_settings(data):
+    if not isinstance(data, dict):
+        raise ValueError("Invalid settings")
+    limits = {"speed": (0,2), "density": (12,180), "strength": (0,1), "groupSize": (.55,1)}
+    out = {}
+    for key, (low,high) in limits.items():
+        if key in data:
+            value = data[key]
+            if type(value) not in (int,float) or not math.isfinite(value) or not low <= value <= high:
+                raise ValueError("Invalid "+key)
+            out[key] = value
+    if "palette" in data:
+        if data["palette"] not in ("Океан","Императорская","Полярная","Металл","Рубин","Неон","Бордо","Бумага"):
+            raise ValueError("Invalid palette")
+        out["palette"] = data["palette"]
+    if "showLabels" in data:
+        if type(data["showLabels"]) is not bool:
+            raise ValueError("Invalid labels")
+        out["showLabels"] = data["showLabels"]
+    with closing(connect()) as db, db:
+        db.execute("INSERT INTO ui_settings VALUES(1,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload",(json.dumps(out,ensure_ascii=False),))
+        event(db,"settings","Визуальные настройки сохранены")
+    return out
+
+def get_events():
+    with closing(connect()) as db:
+        return [dict(at=a,kind=k,detail=d) for a,k,d in db.execute("SELECT at,kind,detail FROM atlas_events ORDER BY id DESC LIMIT 500")]
 
 def snapshot():
     with closing(connect()) as db:
@@ -44,13 +85,17 @@ def add_node(title, category, folder=""):
     if any(p in (".","..") for p in folder.split("/")):
         raise ValueError("Invalid folder path")
     with closing(connect()) as db, db:
-        return db.execute("INSERT INTO nodes(title,category,folder) VALUES(?,?,?)",(title.strip(),category,folder)).lastrowid
+        node_id = db.execute("INSERT INTO nodes(title,category,folder) VALUES(?,?,?)",(title.strip(),category,folder)).lastrowid
+        event(db,"node",title.strip())
+        return node_id
 
 def add_edge(source,target):
     if type(source) is not int or type(target) is not int or source<=0 or target<=0 or source==target:
         raise ValueError("Select two different records")
     with closing(connect()) as db, db:
-        db.execute("INSERT OR IGNORE INTO edges VALUES(?,?)",tuple(sorted((source,target))))
+        result = db.execute("INSERT OR IGNORE INTO edges VALUES(?,?)",tuple(sorted((source,target))))
+        if result.rowcount:
+            event(db,"edge",f"Связь {source} ↔ {target}")
 
 STATIC = {"/":("index.html","text/html; charset=utf-8"),"/style.css":("style.css","text/css; charset=utf-8"),"/dist/app.js":("dist/app.js","text/javascript; charset=utf-8")}
 
@@ -70,6 +115,10 @@ class Handler(BaseHTTPRequestHandler):
         path=urlsplit(self.path).path
         if path=="/api/atlas":
             self.reply(200,snapshot())
+        elif path=="/api/settings":
+            self.reply(200,get_settings())
+        elif path=="/api/events":
+            self.reply(200,get_events())
         elif path in STATIC:
             name,mime=STATIC[path]
             try:
@@ -90,6 +139,9 @@ class Handler(BaseHTTPRequestHandler):
             data=json.loads(self.rfile.read(n))
             if not isinstance(data,dict):
                 raise ValueError("Expected object")
+            if self.path=="/api/settings":
+                self.reply(200,save_settings(data))
+                return
             if self.path=="/api/nodes":
                 add_node(data.get("title"),data.get("category"),data.get("folder",""))
             elif self.path=="/api/edges":

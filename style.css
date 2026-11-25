@@ -43,3 +43,20 @@ body:not(.presentation) #exit-presentation{display:none}
 @keyframes atlas-panel-in{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
 @media(prefers-reduced-motion:no-preference){main.reveal aside{animation:atlas-panel-in .36s ease-out both}main.reveal #right{animation-delay:.07s}main.reveal .activity-cell{animation:atlas-panel-in .35s ease-out both;animation-delay:calc(var(--order,0)*25ms)}}
 @media(max-width:760px){body.presentation{height:100dvh;overflow:hidden}body.presentation main{flex:1;min-height:0}header nav{flex-wrap:wrap}}
+
+/* Deep visualization v0.4 */
+main.expanded{position:relative;display:block;min-height:0}
+main.expanded #stage{position:absolute;inset:5px;min-height:0}
+main.expanded #right{position:absolute;top:5px;bottom:5px;right:5px;width:25%;min-width:230px;z-index:4;box-shadow:-12px 0 30px #0004;background:var(--panel)}
+body.presentation main.expanded #stage{inset:0}
+body.presentation main.expanded #right{display:none!important}
+#atlas-loading{position:absolute;inset:0;display:grid;place-content:center;justify-items:center;gap:13px;background:var(--bg);z-index:6;font:10px var(--mono);letter-spacing:2px;color:var(--accent);pointer-events:none}
+#atlas-loading[hidden],#module-tip[hidden]{display:none}
+#atlas-progress{width:155px;height:3px;accent-color:var(--accent)}
+#module-tip{position:absolute;z-index:3;pointer-events:none;background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:7px;font:10px var(--mono);color:var(--ink);max-width:170px}
+details{margin:10px 0;border-top:1px solid var(--line);padding-top:7px}summary{cursor:pointer;color:var(--accent);font:10px var(--mono);padding:5px 0}details form{margin-top:7px}.check{display:flex;align-items:center;gap:6px}.check input{width:auto;margin:0}
+.calendar-nav{display:flex;align-items:center;justify-content:space-between;gap:4px;margin:8px 0}.calendar-nav span{font:10px var(--mono)}
+#calendar{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:2px}#calendar button{padding:5px 0;font:9px var(--mono)}#calendar .day-with-events{border-color:var(--accent)}#calendar .day-today{color:var(--accent)}#calendar .day-selected{background:var(--accent);color:var(--bg)}.weekday{font:8px var(--mono);text-align:center;color:var(--muted)}
+#day-events,#notices{font:10px var(--mono);overflow-wrap:anywhere;line-height:1.5}.event-row{padding:6px 0;border-bottom:1px solid var(--line)}
+#process-matrix{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px;padding:8px 0}.matrix-cell{aspect-ratio:1;border-radius:50%;border:1px solid var(--line);padding:0;display:grid;place-items:center;font:8px var(--mono);background:var(--surface);color:var(--muted)}.matrix-cell.active-cell{border-color:var(--accent);color:var(--accent)}.muted{color:var(--muted);font-size:9px}
+@media(max-width:760px){main.expanded{display:grid;grid-template-columns:minmax(0,1fr)}main.expanded #stage{position:relative;inset:auto;height:65vh}main.expanded #right{position:relative;inset:auto;width:100%;min-width:0;box-shadow:none}body.presentation main.expanded #stage{height:100%}}

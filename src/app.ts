@@ -15,6 +15,11 @@ let positions=new Map<number,Point>(),targets=new Map<number,Point>(),centers:Po
 let cursor:Point={x:0,y:0},fit=1;
 let atlasMode:Layout="radial", grouping:"category"|"folder"="category", groupNames:string[]=[], collapsed=new Set<string>(), strength=.35, groupSize=.9;
 let nodeGroups=new Map<number,number>(), presentation=false;
+let showLabels=true, groupHover=-1, revealAt=0, groupRadii:number[]=[], mapExtent=350, currentLimit=84;
+const symbols=["◇","▤","✦","◈","▣","◎","♡","⌘","◉"];
+const categoryKind=["ЯДРО","ПАМЯТЬ","ПРОЦЕССЫ","ПАМЯТЬ","ПАМЯТЬ","ПРОЦЕССЫ","ЯДРО","ПРОЦЕССЫ","ПАМЯТЬ"];
+function modulePoint(i:number){return polar(-Math.PI/2+i*tau/Math.max(1,groupNames.length*2),269)}
+function hubPoint(i:number){return polar(-Math.PI/2+i*tau/Math.max(1,groupNames.length),114)}
 function folderOf(n:NodeRecord){return n.folder?.trim()||"Без папки"}
 function groupColor(g:number){return colors[g%colors.length]}
 function groupKey(g:number){return grouping+":"+groupNames[g]}
@@ -49,26 +54,30 @@ function rebuild(){
  if(folderMode&&groupNames.length>9){const rest=groupNames.slice(8);let other="Остальные папки";while(buckets.has(other))other+=" ·";buckets.set(other,rest.flatMap(k=>buckets.get(k)??[]));groupNames=[...groupNames.slice(0,8),other]}
  groups=groupNames.map(c=>buckets.get(c)??[]);groupCounts=groups.map(g=>g.length);nodeGroups=new Map();
  groups.forEach((g,i)=>g.forEach(n=>nodeGroups.set(n.id,i)));
- const all=groups.map((g,i)=>expanded&&collapsed.has(groupKey(i))?[]:g.slice(0,density));
+ currentLimit=expanded?Math.min(600,Math.round(density*Math.max(1,zoom/1.7))):Math.min(50,density);
+ const all=groups.map((g,i)=>expanded&&collapsed.has(groupKey(i))?[]:g.slice(0,currentLimit));
+ groupRadii=all.map((g,i)=>Math.max(48,Math.min(126,35+Math.sqrt(Math.min(groupCounts[i],600))*3.8))*groupSize);
+ const maxR=Math.max(48,...groupRadii);const ringR=Math.max(230,(maxR+12)/Math.sin(Math.PI/Math.max(3,groupNames.length)));
+ const spacing=Math.max(180,maxR*2+18);mapExtent=expanded?Math.max(350,mode==="hex"?spacing*2.1:mode==="tile"?spacing*1.6:mode==="clusters"?ringR+maxR+35:350):350;
  if(selected!==null){const n=nodeMap.get(selected),g=nodeGroups.get(selected);if(n&&g!==undefined&&!(expanded&&collapsed.has(groupKey(g)))&&!all[g].some(x=>x.id===n.id))all[g].push(n)}
  visible=all.flat();targets=new Map();centers=[];
  const count=Math.max(1,groupNames.length);
  for(let g=0;g<count;g++){
   if(!groupNames[g])continue;
   const angle=-Math.PI/2+tau*g/count;
-  const center=mode==="hex"?hexCenter(g):mode==="tile"?tileCenter(g):polar(angle,mode==="clusters"||mode==="force"?230:218);
+  const center=mode==="hex"?hexCenter(g,spacing):mode==="tile"?tileCenter(g,spacing):polar(angle,mode==="clusters"?ringR:mode==="force"?230:218);
   centers.push(center);
   all[g].forEach((n,i)=>{
    let p:Point;
    if(mode==="radial"||mode==="hud"){
     const cols=Math.max(3,Math.ceil(Math.sqrt(all[g].length)*1.25)),col=i%cols,row=Math.floor(i/cols);
     const a=angle+((col-(cols-1)/2)/cols)*tau/count*.78;
-    const inner=expanded?104:72,outer=expanded?215:190,rows=Math.max(1,Math.ceil(all[g].length/cols)-1);p=polar(a,inner+row*(outer-inner)/rows+(col%2)*2);
+    const inner=expanded?104:128,outer=expanded?215:190,rows=Math.max(1,Math.ceil(all[g].length/cols)-1);p=polar(a,inner+row*(outer-inner)/rows+(col%2)*2);
    }else if(mode==="tile"){
     const cols=Math.ceil(Math.sqrt(all[g].length)),cell=110*groupSize/Math.max(1,cols);
     p={x:center.x+(i%cols-(cols-1)/2)*cell,y:center.y+(Math.floor(i/cols)-(cols-1)/2)*cell};
    }else{
-    const rr=Math.sqrt((i+.5)/Math.max(all[g].length,1))*(mode==="hex"?55:62)*groupSize;const q=i*2.399963;
+    const rr=Math.sqrt((i+.5)/Math.max(all[g].length,1))*groupRadii[g]*.72;const q=i*2.399963;
     p={x:center.x+Math.cos(q)*rr,y:center.y+Math.sin(q)*rr};
    }
    targets.set(n.id,p);if(!positions.has(n.id))positions.set(n.id,{x:0,y:0});
@@ -76,13 +85,13 @@ function rebuild(){
  }
  if(mode==="force")relaxForce();
  for(const id of positions.keys())if(!targets.has(id))positions.delete(id);
- refreshGroupControls();
+ refreshGroupControls();resize();
 }
-function hexCenter(i:number):Point{
+function hexCenter(i:number,spacing:number):Point{
  const axial=[[1,0],[0,1],[-1,1],[-1,0],[0,-1],[1,-1],[2,-1],[1,1],[-1,2]];
- const [q,r]=axial[i%axial.length];return{x:Math.sqrt(3)*85*(q+r/2),y:127.5*r};
+ const [q,r]=axial[i%axial.length];return{x:spacing*(q+r/2),y:spacing*Math.sqrt(3)/2*r};
 }
-function tileCenter(i:number):Point{return{x:(i%3-1)*180,y:(Math.floor(i/3)-1)*180}}
+function tileCenter(i:number,spacing:number):Point{return{x:(i%3-1)*spacing,y:(Math.floor(i/3)-1)*spacing}}
 function relaxForce(){
  const seeds=new Map(Array.from(targets,([id,p])=>[id,{...p}]));
  const activeEdges=edges.filter(e=>targets.has(e.source)&&targets.has(e.target)).slice(0,5000);
@@ -102,7 +111,7 @@ function refreshGroupControls(){
  const root=$("graph-groups");root.replaceChildren();
  groupNames.forEach((name,i)=>{const b=document.createElement("button");b.className="group-toggle";const closed=collapsed.has(groupKey(i));b.setAttribute("aria-expanded",String(!closed));text(b,(closed?"▸ ":"▾ ")+name+" · "+groupCounts[i]);b.onclick=()=>{if(closed)collapsed.delete(groupKey(i));else collapsed.add(groupKey(i));if(selected!==null&&nodeGroups.get(selected)===i&& !closed)selected=null;rebuild();refreshDetails();refreshCounts()};root.append(b)})
 }
-function resize(){const box=stage.getBoundingClientRect();width=Math.max(1,box.width);height=Math.max(1,box.height);const dpr=Math.min(devicePixelRatio||1,2);canvas.width=Math.round(width*dpr);canvas.height=Math.round(height*dpr);fit=Math.max(.1,Math.min(width/(expanded?(mode==="hex"?830:mode==="force"?790:735):670),height/(expanded?(mode==="hex"?760:735):740)));ctx.setTransform(dpr,0,0,dpr,0,0)}
+function resize(){const box=stage.getBoundingClientRect();width=Math.max(1,box.width);height=Math.max(1,box.height);const dpr=Math.min(devicePixelRatio||1,2);canvas.width=Math.round(width*dpr);canvas.height=Math.round(height*dpr);fit=Math.max(.025,Math.min(width/(expanded?mapExtent*2.2:610),height/(expanded?mapExtent*2.2:660)));ctx.setTransform(dpr,0,0,dpr,0,0)}
 new ResizeObserver(resize).observe(stage);resize();
 function scale(){return fit*zoom}
 function world(p:Point):Point{return{x:(p.x-width/2-pan.x)/scale(),y:(p.y-height/2-pan.y)/scale()}}
@@ -118,66 +127,72 @@ function drawCore(){
   ctx.strokeStyle=paper()?"#21313a":"#e2e9ed";ctx.beginPath();ctx.arc(0,0,12,0,tau);ctx.stroke();ctx.beginPath();ctx.ellipse(0,0,13,7,-.75,0,tau);ctx.stroke();
   ctx.fillStyle=paper()?"#21313a":"#c2d1d9";ctx.font="8px "+mono;ctx.textAlign="center";ctx.fillText("ЯДРО",0,47);return;
  }
- const glow=ctx.createRadialGradient(0,0,0,0,0,61);glow.addColorStop(0,c+"35");glow.addColorStop(1,c+"00");ctx.fillStyle=glow;ctx.fillRect(-61,-61,122,122);
- circle(0,0,31,c+"20");circle(0,0,48,c+"15");
- for(let i=0;i<155;i++){const a=i*2.399963+phase*.18;const r=2+Math.sqrt((i+.5)/155)*(29+2*Math.sin(phase+i*.17));const p=polar(a,r);const q=polar(a+.5,r*.82);if(i%4===0)line(p,q,c+"32");circle(p.x,p.y,i%9===0?1.3:.65,c+"00",c+(i%7===0?"f0":"80"))}
- ctx.fillStyle=c;ctx.font="8px "+mono;ctx.textAlign="center";ctx.fillText("КОГНИТИВНОЕ ЯДРО",0,61);
+ const pulse=1+.07*Math.sin(phase*1.7);
+ const glow=ctx.createRadialGradient(0,0,0,0,0,64);glow.addColorStop(0,c+"35");glow.addColorStop(1,c+"00");ctx.fillStyle=glow;ctx.fillRect(-64,-64,128,128);
+ for(let layer=0;layer<4;layer++){const count=80+layer*24;for(let i=0;i<count;i++){const a=i*2.399963+phase*(layer%2===0?.18:-.13)*(1+layer*.28);const lat=Math.acos(1-2*(i+.5)/count),rad=(14+layer*5)*pulse;const x=Math.cos(a)*Math.sin(lat)*rad,y=Math.cos(lat)*rad*.82+Math.sin(a)*Math.sin(lat)*rad*.26;const p={x,y};const col=groupColor(layer);if(i%8===0)line(p,{x:x*.65,y:y*.65},col+"26");circle(x,y,i%11===0?1.4:.55+layer*.12,col+"00",col+(i%7===0?"e8":"80"))}}
+ ctx.fillStyle=c;ctx.font="8px "+mono;ctx.textAlign="center";ctx.fillText("КОГНИТИВНОЕ ЯДРО",0,53);
+ for(let i=0;i<groupNames.length*2;i++){const p=modulePoint(i),g=i%groupNames.length,col=groupColor(g);circle(p.x,p.y,13,col+"45",paper()?"#f2f0e8":"#101c27");ctx.fillStyle=col;ctx.font="12px "+mono;ctx.fillText(i<groupNames.length?symbols[g%9]:String(groupCounts[g]),p.x,p.y+4);ctx.font="6px "+mono;ctx.fillText(i<groupNames.length?groupNames[g].slice(0,12):"Записи",p.x,p.y+22)}
+
 }
 function frame(now:number){
  const dt=last?Math.min(50,now-last):16;last=now;if(!reduced)phase+=dt*.001*speed;
  if(cameraTarget){const ease=reduced?1:1-Math.pow(.0005,dt/1000);zoom+=(cameraTarget.zoom-zoom)*ease;pan.x+=(cameraTarget.pan.x-pan.x)*ease;pan.y+=(cameraTarget.pan.y-pan.y)*ease;if(Math.abs(zoom-cameraTarget.zoom)<.005&&Math.hypot(pan.x-cameraTarget.pan.x,pan.y-cameraTarget.pan.y)<.5){zoom=cameraTarget.zoom;pan=cameraTarget.pan;cameraTarget=null}$<HTMLInputElement>("zoom").value=String(zoom)}
  const dpr=canvas.width/width;ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,width,height);
+ const reveal=reduced?1:Math.min(1,(now-revealAt)/850);const load=$("atlas-loading");if(!load.hidden){$<HTMLProgressElement>("atlas-progress").value=Math.min(100,reveal*180);if(reveal>=.56)load.hidden=true}
  ctx.save();ctx.translate(width/2+pan.x,height/2+pan.y);ctx.scale(scale(),scale());ctx.lineWidth=1/Math.max(scale(),.45);
  const step=reduced?1:1-Math.pow(.001,dt/1000);
  for(const [id,t] of targets){const p=positions.get(id)!;p.x+=(t.x-p.x)*step;p.y+=(t.y-p.y)*step}
  if(mode==="radial"||mode==="hud"){
   if(mode==="hud"){ctx.setLineDash([12,5,2,5]);for(let k=0;k<3;k++)circle(0,0,240+k*28,gridInk());ctx.setLineDash([]);for(let i=0;i<36;i++){const a=i*tau/36;line(polar(a,317),polar(a,326+(i%3===0?8:0)),groupColor(i)+"77")}}
   for(const r of (expanded?[100,222,285,320]:[70,190,238,274]))circle(0,0,r,gridInk());
-  if(expanded){for(let g=0;g<groups.length;g++){const n=Math.min(32,groups[g].length);for(let j=0;j<n;j++){const angle=-Math.PI/2+g*tau/groups.length+(j%16-7.5)*.032;const p=polar(angle,292+Math.floor(j/16)*12);circle(p.x,p.y,4.5,colors[g]+"68");circle(p.x,p.y,1.3,colors[g]+"90")}}}
+  if(expanded){for(let g=0;g<groups.length;g++){const n=Math.min(54,groups[g].length);for(let j=0;j<n;j++){const angle=-Math.PI/2+g*tau/groups.length+(j%18-8.5)*.029;const p=polar(angle,282+Math.floor(j/18)*14);circle(p.x,p.y,4,groupColor(g)+"68");if(zoom>.85)circle(p.x,p.y,1.2,groupColor(g)+"90")}}}
  }else if(mode==="clusters"){circle(0,0,215,"#25434d50")}
  centers.forEach((c,g)=>{
-  const col=groupColor(g);const active=!filter||groups[g].some(n=>n.category===filter);ctx.globalAlpha=active?1:.19;
-  if(mode==="hex"){polygon(c,81*groupSize,col);circle(c.x,c.y,24*groupSize,col+"55",col+"0a");for(let j=0;j<6;j++){const p=polar(Math.PI/6+j*tau/6,81*groupSize);circle(c.x+p.x,c.y+p.y,3,col+"55",paper()?"#f2f0e8":"#08121b")}}
-  else if(mode==="clusters"){circle(c.x,c.y,72*groupSize,col+"77",col+"0a");circle(c.x,c.y,48*groupSize,col+"22")}
+  const col=groupColor(g);const active=!filter||groups[g].some(n=>n.category===filter);ctx.globalAlpha=(active&&(groupHover<0||groupHover===g)?1:.19)*Math.min(1,reveal*2);
+  if(mode==="hex"){polygon(c,groupRadii[g],col);circle(c.x,c.y,groupRadii[g]*.3,col+"55",col+"0a");for(let j=0;j<6;j++){const p=polar(Math.PI/6+j*tau/6,groupRadii[g]);circle(c.x+p.x,c.y+p.y,5,col+"75",paper()?"#f2f0e8":"#08121b");if(zoom>1){ctx.font="7px "+mono;ctx.textAlign="center";ctx.fillStyle=col;ctx.fillText(symbols[g%9],c.x+p.x,c.y+p.y+2)}}}
+  else if(mode==="clusters"){circle(c.x,c.y,groupRadii[g],col+"77",col+"0a");for(const ratio of [.3,.55,.78])circle(c.x,c.y,groupRadii[g]*ratio,col+"22")}
   else if(mode==="tile"){const sz=140*groupSize;ctx.fillStyle=col+"0b";ctx.strokeStyle=col+"55";ctx.fillRect(c.x-sz/2,c.y-sz/2,sz,sz);ctx.strokeRect(c.x-sz/2,c.y-sz/2,sz,sz)}
   else if(mode==="force"){circle(c.x,c.y,70*groupSize,col+"22",col+"05")}
-  else{const a=-Math.PI/2+g*tau/centers.length;if(!expanded){const p=polar(a,247);circle(p.x,p.y,16,col+"55",col+"0e");ctx.font="10px "+mono;ctx.textAlign="center";ctx.fillStyle=col;ctx.fillText(String(groupCounts[g]),p.x,p.y+3);const q=polar(a,113);circle(q.x,q.y,5,col+"99",col);line(polar(a,32),q,col+"30");line(q,p,col+"20")}else{line(polar(a,74),c,col+"16")}}
-  const label=(mode==="radial"||mode==="hud")?polar(-Math.PI/2+g*tau/centers.length,expanded?241:210):{x:c.x,y:c.y+(mode==="hex"?-36:-79)};
-  ctx.textAlign="center";ctx.font=(expanded?"9px ":"10px ")+mono;ctx.fillStyle=col;ctx.fillText((expanded&&collapsed.has(groupKey(g))?"▸ ":"")+groupNames[g].toUpperCase().slice(0,28),label.x,label.y);
+  else{const a=-Math.PI/2+g*tau/centers.length;if(!expanded){const q=hubPoint(g);circle(q.x,q.y,11,col+"99",col+"55");circle(q.x,q.y,5,col+"cc",col);line(polar(a,35),q,col+"45");const t=(phase*.45+g*.11)%1;if(!reduced)circle(q.x*t,q.y*t,2,col+"00",col);for(const n of groups[g].slice(0,20)){const p=positions.get(n.id);if(p)line(q,p,col+"22")}}else{line(polar(a,74),c,col+"16");const p=polar(a,252);circle(p.x,p.y,10,col+"88",col+"12");ctx.fillStyle=col;ctx.font="9px "+mono;ctx.textAlign="center";ctx.fillText(grouping==="folder"?"▣":symbols[g%9],p.x,p.y+3)}}
+
+  const label=(mode==="radial"||mode==="hud")?polar(-Math.PI/2+g*tau/centers.length,expanded?231:208):{x:c.x,y:c.y+(mode==="hex"?-groupRadii[g]*.78:mode==="clusters"?-groupRadii[g]-8:-79)};
+  ctx.textAlign="center";ctx.font=(expanded?"9px ":"10px ")+mono;ctx.fillStyle=col;ctx.fillText((expanded&&collapsed.has(groupKey(g))?"▸ ":"")+groupNames[g].toUpperCase().slice(0,28),label.x,label.y);if(expanded&&grouping==="category"&&(mode==="radial"||mode==="hud")){ctx.font="6px "+mono;ctx.fillText(categoryKind[g]??"ПАМЯТЬ",label.x,label.y+9)}
  });
  ctx.globalAlpha=1;
  const focus=hover??selected;
- if(expanded&&strength>0){ctx.globalAlpha=1;const opacity=Math.round(strength*(mode==="force"?85:40)).toString(16).padStart(2,"0");let drawn=0;for(const e of edges){const a=positions.get(e.source),b=positions.get(e.target);if(a&&b&&(!filter||nodeMap.get(e.source)?.category===filter||nodeMap.get(e.target)?.category===filter)){line(a,b,"#79b7bd"+opacity);if(++drawn>=2500)break}}}
+ if(expanded&&strength>0){ctx.globalAlpha=1;const opacity=Math.round(strength*(mode==="force"?85:40)).toString(16).padStart(2,"0");let drawn=0;for(const e of edges){const a=positions.get(e.source),b=positions.get(e.target);if(a&&b&&(!filter||nodeMap.get(e.source)?.category===filter||nodeMap.get(e.target)?.category===filter)){line(a,b,(nodeGroups.get(e.source)!==nodeGroups.get(e.target)?"#bf9ae8":"#79b7bd")+opacity);if(++drawn>=2500)break}}}
  if(focus!==null){const p=positions.get(focus);if(p)for(const id of neighbor.get(focus)??[]){const q=positions.get(id);if(q)line(p,q,"#81e6dc"+Math.round(strength*255).toString(16).padStart(2,"0"))}}
  for(const n of visible){
   const p=positions.get(n.id)!;const col=color(n);const lit=n.id===focus||n.id===selected;const related=focus!==null&&neighbor.get(focus)?.has(n.id);
-  const dim=(filter!==null&&n.category!==filter)||(focus!==null&&!lit&&!related);
-  ctx.globalAlpha=dim?.22:1;
+  const dim=(filter!==null&&n.category!==filter)||(groupHover>=0&&nodeGroups.get(n.id)!==groupHover)||(focus!==null&&!lit&&!related);
+  ctx.globalAlpha=(dim?.22:1)*Math.max(0,Math.min(1,reveal*2-.6));
   const r=lit?4.5:related?2.7:(expanded?1.1:1.3)+(.5+.5*Math.sin(phase*1.5+n.id*.71))*.55;
   if(lit||related)circle(p.x,p.y,r+4,col+"66");
-  circle(p.x,p.y,r,col,col+(lit?"ff":"b0"));
+  if(expanded&&(mode==="radial"||mode==="hud")){ctx.fillStyle=col+(lit?"ff":"b0");ctx.fillRect(p.x-r,p.y-r,r*2,r*2)}else circle(p.x,p.y,r,col,col+(lit?"ff":"b0"));
+  if(expanded&&zoom>3&&lit){ctx.font="8px "+mono;ctx.fillStyle=col;ctx.fillText(symbols[state.categories.indexOf(n.category)%9]??"◇",p.x+6,p.y-4)}
  }
- ctx.globalAlpha=1;if(expanded&&zoom>=1.8){const used=new Set<string>();let labels=0;for(const n of visible){const p=positions.get(n.id)!,s=worldToScreen(p);if(s.x<0||s.x>width||s.y<0||s.y>height||(filter&&n.category!==filter))continue;const key=Math.floor(s.x/100)+","+Math.floor(s.y/17);if(used.has(key)&&n.id!==focus)continue;used.add(key);ctx.font=(10/scale())+"px "+mono;ctx.fillStyle=paper()?"#21313a":"#c8d8df";ctx.textAlign="left";ctx.fillText(n.title.slice(0,30),p.x+5/scale(),p.y-5/scale());if(++labels>=100)break}}
+ ctx.globalAlpha=1;if(expanded&&showLabels&&zoom>=1.8){const used=new Set<string>();let labels=0;for(const n of visible){const p=positions.get(n.id)!,s=worldToScreen(p);if(s.x<0||s.x>width||s.y<0||s.y>height||(filter&&n.category!==filter))continue;const key=Math.floor(s.x/100)+","+Math.floor(s.y/17);if(used.has(key)&&n.id!==focus)continue;used.add(key);ctx.font=(10/scale())+"px "+mono;ctx.fillStyle=paper()?"#21313a":"#c8d8df";ctx.textAlign="left";ctx.fillText(n.title.slice(0,30),p.x+5/scale(),p.y-5/scale());if(++labels>=100)break}}
  drawCore();
  ctx.restore();requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
 function local(e:PointerEvent|WheelEvent|MouseEvent):Point{const r=canvas.getBoundingClientRect();return{x:e.clientX-r.left,y:e.clientY-r.top}}
 function hit(p:Point):number|null{let best:number|null=null,min=12*12;for(const n of visible){if(filter&&n.category!==filter)continue;const q=worldToScreen(positions.get(n.id)!);const d=(q.x-p.x)**2+(q.y-p.y)**2;if(d<min){min=d;best=n.id}}return best}
+function hitGroup(p:Point){const w=world(p);if(!expanded){for(let i=0;i<groupNames.length*2;i++){const q=modulePoint(i);if(Math.hypot(q.x-w.x,q.y-w.y)<19)return i%groupNames.length}for(let i=0;i<groupNames.length;i++){const q=hubPoint(i);if(Math.hypot(q.x-w.x,q.y-w.y)<16)return i}}else{for(let i=0;i<centers.length;i++){const q=centers[i];if(Math.hypot(q.x-w.x,q.y-w.y)<((mode==="clusters"||mode==="hex")?groupRadii[i]:18))return i}}return -1}
 function tooltip(id:number|null,p:Point){const t=$("tooltip");const n=id===null?undefined:nodeMap.get(id);t.hidden=!n;if(n){text(t,n.title+"\n"+n.category+" · связей: "+(neighbor.get(n.id)?.size??0));t.style.left=Math.max(4,Math.min(width-194,p.x+14))+"px";t.style.top=Math.max(4,Math.min(height-75,p.y+12))+"px"}}
-function choose(id:number|null){selected=id;rebuild();refreshDetails()}
+function choose(id:number|null){selected=id;rebuild();refreshDetails();if(id!==null){$<HTMLDetailsElement>("record-card").open=true}}
 canvas.addEventListener("pointerdown",e=>{if(e.button!==0)return;cameraTarget=null;drag=local(e);dragOrigin=drag;moved=false;canvas.setPointerCapture(e.pointerId)});
-canvas.addEventListener("pointermove",e=>{cursor=local(e);if(drag){pan.x+=cursor.x-drag.x;pan.y+=cursor.y-drag.y;drag=cursor;if(dragOrigin&&Math.hypot(cursor.x-dragOrigin.x,cursor.y-dragOrigin.y)>4)moved=true;hover=null;tooltip(null,cursor)}else{hover=hit(cursor);tooltip(hover,cursor)}});
-canvas.addEventListener("pointerup",e=>{if(!moved&&drag)choose(hit(local(e)));drag=null;dragOrigin=null});
+canvas.addEventListener("pointermove",e=>{cursor=local(e);if(drag){pan.x+=cursor.x-drag.x;pan.y+=cursor.y-drag.y;drag=cursor;if(dragOrigin&&Math.hypot(cursor.x-dragOrigin.x,cursor.y-dragOrigin.y)>4)moved=true;hover=null;tooltip(null,cursor)}else{hover=hit(cursor);tooltip(hover,cursor);groupHover=hover===null?hitGroup(cursor):nodeGroups.get(hover)??-1;const m=$("module-tip");m.hidden=expanded||hover!==null||groupHover<0;if(!m.hidden){text(m,groupNames[groupHover]+" · "+groupCounts[groupHover]+" записей");m.style.left=Math.min(width-175,Math.max(0,cursor.x+10))+"px";m.style.top=Math.max(0,cursor.y-30)+"px"}}});
+canvas.addEventListener("pointerup",e=>{if(!moved&&drag){const p=local(e),id=hit(p),g=hitGroup(p);if(id!==null)choose(id);else if(g>=0){const category=groupNames[g];if(!expanded){layout(true);grouping="category";filter=category;rebuild();refreshPanels()}else{filter=grouping==="category"?(filter===category?null:category):null;refreshPanels()}}else choose(null)}drag=null;dragOrigin=null});
 canvas.addEventListener("pointercancel",()=>{drag=null;dragOrigin=null});
-canvas.addEventListener("pointerleave",()=>{hover=null;tooltip(null,cursor)});
-function setZoom(z:number,p:Point={x:width/2,y:height/2}){cameraTarget=null;const w=world(p);zoom=Math.max(.35,Math.min(5,z));pan={x:p.x-width/2-w.x*scale(),y:p.y-height/2-w.y*scale()};$<HTMLInputElement>("zoom").value=String(zoom)}
+canvas.addEventListener("pointerleave",()=>{hover=null;groupHover=-1;$("module-tip").hidden=true;tooltip(null,cursor)});
+function setZoom(z:number,p:Point={x:width/2,y:height/2}){cameraTarget=null;const w=world(p);zoom=Math.max(.35,Math.min(5,z));pan={x:p.x-width/2-w.x*scale(),y:p.y-height/2-w.y*scale()};$<HTMLInputElement>("zoom").value=String(zoom);const limit=expanded?Math.min(600,Math.round(density*Math.max(1,zoom/1.7))):Math.min(50,density);if(Math.abs(limit-currentLimit)>=24){rebuild();refreshCounts()}}
 canvas.addEventListener("wheel",e=>{e.preventDefault();setZoom(zoom*Math.exp(-e.deltaY*.0015),local(e))},{passive:false});
 function focusNode(id:number){if(!expanded)layout(true);const g=nodeGroups.get(id);if(g!==undefined)collapsed.delete(groupKey(g));choose(id);const p=targets.get(id);if(p){const z=3;cameraTarget={zoom:z,pan:{x:-p.x*fit*z,y:-p.y*fit*z}}}}
 canvas.addEventListener("dblclick",e=>{const id=hit(local(e));if(id!==null)focusNode(id)});
 function reset(){cameraTarget=null;zoom=1;pan={x:0,y:0};$<HTMLInputElement>("zoom").value="1";filter=null;choose(null);refreshPanels()}
 $("reset").onclick=reset;
-function layout(isExpanded:boolean){if(expanded===isExpanded)return;if(expanded)atlasMode=mode;expanded=isExpanded;$("layout").classList.toggle("expanded",expanded);$("home").classList.toggle("active",!expanded);$("atlas").classList.toggle("active",expanded);text($("subtitle"),expanded?"Детальная карта памяти":"КОМАНДНЫЙ ЦЕНТР · ЖИВОЕ ЯДРО");text($("brand-mode"),expanded?"Атлас памяти":"Командный центр");$(expanded?"search-atlas":"search-home").append($("search-block"));mode=expanded?atlasMode:"radial";document.querySelectorAll<HTMLElement>("[data-mode]").forEach(x=>x.classList.toggle("active",x.dataset.mode===mode));resize();reset();positions.forEach(p=>{p.x*=.12;p.y*=.12});const el=$("layout");el.classList.remove("reveal");void el.offsetWidth;el.classList.add("reveal");text($("legend"),expanded?"Колесо — масштаб · Перетаскивание — перемещение · Двойной щелчок — фокус":"Нажмите на ядро, чтобы открыть полный атлас")}
+function layout(isExpanded:boolean){if(expanded===isExpanded)return;if(expanded)atlasMode=mode;expanded=isExpanded;revealAt=performance.now();$("atlas-loading").hidden=!expanded||reduced;groupHover=-1;$("module-tip").hidden=true;$("layout").classList.toggle("expanded",expanded);$("home").classList.toggle("active",!expanded);$("atlas").classList.toggle("active",expanded);text($("subtitle"),expanded?"Детальная карта памяти":"КОМАНДНЫЙ ЦЕНТР · ЖИВОЕ ЯДРО");text($("brand-mode"),expanded?"Атлас памяти":"Командный центр");$(expanded?"search-atlas":"search-home").append($("search-block"));mode=expanded?atlasMode:"radial";document.querySelectorAll<HTMLElement>("[data-mode]").forEach(x=>x.classList.toggle("active",x.dataset.mode===mode));resize();reset();positions.forEach(p=>{p.x*=.12;p.y*=.12});const el=$("layout");el.classList.remove("reveal");void el.offsetWidth;el.classList.add("reveal");text($("legend"),expanded?"Колесо — масштаб · Перетаскивание — перемещение · Двойной щелчок — фокус":"Нажмите на ядро, чтобы открыть полный атлас")}
 $("core-open").onclick=()=>layout(true);
 $("home").onclick=()=>layout(false);$("atlas").onclick=()=>layout(true);
 document.querySelectorAll<HTMLButtonElement>("[data-mode]").forEach(b=>b.onclick=()=>{mode=b.dataset.mode as Layout;atlasMode=mode;document.querySelectorAll("[data-mode]").forEach(x=>x.classList.toggle("active",x===b));cameraTarget=null;resize();rebuild()});
@@ -187,7 +202,7 @@ $("collapse-groups").onclick=()=>{groupNames.forEach((_,i)=>collapsed.add(groupK
 $<HTMLInputElement>("strength").oninput=e=>{strength=Number((e.target as HTMLInputElement).value);if(mode==="force")rebuild()};
 $<HTMLInputElement>("group-size").oninput=e=>{groupSize=Number((e.target as HTMLInputElement).value);rebuild()};
 async function togglePresentation(on:boolean){if(on&&!expanded)layout(true);presentation=on;document.body.classList.toggle("presentation",on);$("presentation").setAttribute("aria-pressed",String(on));try{if(on&&!document.fullscreenElement&&document.documentElement.requestFullscreen)await document.documentElement.requestFullscreen();else if(!on&&document.fullscreenElement)await document.exitFullscreen()}catch{/* CSS presentation still works */}resize()}
-$("presentation").onclick=()=>void togglePresentation(!presentation);$("exit-presentation").onclick=()=>void togglePresentation(false);document.addEventListener("fullscreenchange",()=>{if(!document.fullscreenElement&&presentation)void togglePresentation(false)});document.addEventListener("keydown",e=>{if(e.key==="Escape"&&presentation)void togglePresentation(false);else if(e.key==="Escape"&&expanded)layout(false)});
+$("presentation").onclick=()=>void togglePresentation(!presentation);$("exit-presentation").onclick=()=>void togglePresentation(false);document.addEventListener("fullscreenchange",()=>{if(!document.fullscreenElement&&presentation)void togglePresentation(false)});document.addEventListener("keydown",e=>{if(e.key==="/"&&!e.ctrlKey&&!e.metaKey&&!(e.target instanceof HTMLElement&&(["INPUT","TEXTAREA","SELECT"].includes(e.target.tagName)||e.target.isContentEditable))){e.preventDefault();if(presentation)void togglePresentation(false);$("search").focus();return}if(e.key==="Escape"&&presentation)void togglePresentation(false);else if(e.key==="Escape"&&expanded)layout(false)});
 $<HTMLInputElement>("speed").oninput=e=>speed=Number((e.target as HTMLInputElement).value);
 $<HTMLInputElement>("density").oninput=e=>{density=Number((e.target as HTMLInputElement).value);rebuild();refreshPanels()};
 $<HTMLInputElement>("zoom").oninput=e=>setZoom(Number((e.target as HTMLInputElement).value));
@@ -196,19 +211,29 @@ function refreshDetails(){const n=selected===null?undefined:nodeMap.get(selected
 function options(el:HTMLSelectElement,items:{value:string;label:string}[]){const old=el.value;el.replaceChildren();for(const i of items){const o=document.createElement("option");o.value=i.value;o.textContent=i.label;el.append(o)}if(items.some(i=>i.value===old))el.value=old}
 function refreshRecords(){const q=$<HTMLInputElement>("search").value.trim().toLowerCase(),el=$("records");el.replaceChildren();const results=nodes.filter(n=>(!filter||n.category===filter)&&(n.title+" "+folderOf(n)).toLowerCase().includes(q));for(const n of results.slice(0,100)){const b=document.createElement("button");b.className="entry";text(b,n.title);b.onclick=()=>focusNode(n.id);el.append(b)}if(results.length>100){const p=document.createElement("p");text(p,"Показано 100 из "+results.length+"; уточните поиск.");el.append(p)}}
 $<HTMLInputElement>("search").oninput=refreshRecords;
-function refreshPanels(){const totals=categoryCounts();const overview=$("activity-grid");overview.replaceChildren();state.categories.forEach((c,i)=>{const item=document.createElement("div");item.className="activity-cell";item.style.setProperty("--cell",colors[i%colors.length]);item.style.setProperty("--order",String(i));const ring=document.createElement("i");text(ring,String(totals[i]??0));const label=document.createElement("span");text(label,c);item.append(ring,label);overview.append(item)});const cats=$("categories");cats.replaceChildren();state.categories.forEach((c,i)=>{const b=document.createElement("button");b.className="category-row"+(filter===c?" active":"");const label=document.createElement("span"),dot=document.createElement("i");dot.style.background=colors[i%colors.length];label.append(dot,document.createTextNode(c));const count=document.createElement("span");text(count,String(totals[i]??0));b.append(label,count);b.onclick=()=>{filter=filter===c?null:c;refreshPanels()};cats.append(b)});refreshRecords();refreshDetails();
+function refreshPanels(){renderMatrix();const totals=categoryCounts();const overview=$("activity-grid");overview.replaceChildren();state.categories.forEach((c,i)=>{const item=document.createElement("div");item.className="activity-cell";item.style.setProperty("--cell",colors[i%colors.length]);item.style.setProperty("--order",String(i));const ring=document.createElement("i");text(ring,String(totals[i]??0));const label=document.createElement("span");text(label,c);item.append(ring,label);overview.append(item)});const cats=$("categories");cats.replaceChildren();state.categories.forEach((c,i)=>{const b=document.createElement("button");b.className="category-row"+(filter===c?" active":"");const label=document.createElement("span"),dot=document.createElement("i");dot.style.background=colors[i%colors.length];label.append(dot,document.createTextNode(c));const count=document.createElement("span");text(count,String(totals[i]??0));b.append(label,count);b.onclick=()=>{filter=filter===c?null:c;refreshPanels()};cats.append(b)});refreshRecords();refreshDetails();
  options($("category"),state.categories.map(c=>({value:c,label:c})));
  const items=state.nodes.map(n=>({value:String(n.id),label:n.title}));options($("source"),items);options($("target"),items);
  $<HTMLButtonElement>("link").querySelector("button")!.disabled=items.length<2;
  refreshCounts();
 }
 function refreshCounts(){text($("counts"),(demo?"ДЕМО: ":"")+"Записей "+nodes.length+" · Связей "+edges.length+" · На карте "+visible.length)}
-async function post(path:string,body:unknown){const r=await fetch(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});const s=await r.json();if(!r.ok)throw new Error(s.error??"Ошибка API");setState(s as Snapshot)}
+async function post(path:string,body:unknown){const r=await fetch(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});const s=await r.json();if(!r.ok)throw new Error(s.error??"Ошибка API");setState(s as Snapshot);void loadEvents()}
 $<HTMLFormElement>("add").onsubmit=async e=>{e.preventDefault();try{await post("/api/nodes",{title:$<HTMLInputElement>("title").value,category:$<HTMLSelectElement>("category").value,folder:$<HTMLInputElement>("folder").value});$<HTMLInputElement>("title").value="";text($("message"),"Запись сохранена")}catch(err){text($("message"),String(err))}};
 $<HTMLFormElement>("link").onsubmit=async e=>{e.preventDefault();try{await post("/api/edges",{source:Number($<HTMLSelectElement>("source").value),target:Number($<HTMLSelectElement>("target").value)});text($("message"),"Связь сохранена")}catch(err){text($("message"),String(err))}};
-$("save-settings").onclick=()=>{try{localStorage.setItem("atlas-visual-v2",JSON.stringify({palette:palettes.find(p=>p.colors===colors)?.name,speed,density,strength,groupSize}));text($("message"),"Настройки сохранены в браузере")}catch{ text($("message"),"Хранилище браузера недоступно") }};
+$("save-settings").onclick=async()=>{try{const r=await fetch("/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({palette:palettes.find(p=>p.colors===colors)?.name,speed,density,strength,groupSize,showLabels})});if(!r.ok)throw Error("API "+r.status);text($("message"),"Настройки сохранены в SQLite");void loadEvents()}catch(err){text($("message"),String(err))}};
+$<HTMLInputElement>("show-labels").onchange=e=>showLabels=(e.target as HTMLInputElement).checked;
 $("export-png").onclick=()=>{canvas.toBlob(blob=>{if(!blob)return;const url=URL.createObjectURL(blob);const link=document.createElement("a");link.href=url;link.download="amatsumireika-atlas.png";link.click();setTimeout(()=>URL.revokeObjectURL(url),1000)},"image/png")};
-try{const raw=localStorage.getItem("atlas-visual-v2");if(raw){const saved=JSON.parse(raw);const p=palettes.find(p=>p.name===saved.palette);if(p){colors=p.colors;document.documentElement.style.setProperty("--accent",colors[0]);document.documentElement.classList.toggle("paper",p.name==="Бумага")}if(Number.isFinite(saved.strength))strength=Math.max(0,Math.min(1,saved.strength));if(Number.isFinite(saved.groupSize))groupSize=Math.max(.55,Math.min(1,saved.groupSize));$<HTMLInputElement>("strength").value=String(strength);$<HTMLInputElement>("group-size").value=String(groupSize);if(Number.isFinite(saved.speed))speed=Math.max(0,Math.min(2,saved.speed));if(Number.isFinite(saved.density))density=Math.max(12,Math.min(180,saved.density));$<HTMLInputElement>("speed").value=String(speed);$<HTMLInputElement>("density").value=String(density);renderPalettes()}}catch{/* defaults remain */}
+async function loadSettings(){try{const response=await fetch("/api/settings");if(!response.ok)throw Error("API "+response.status);let saved=await response.json();if(Object.keys(saved).length===0){try{saved=JSON.parse(localStorage.getItem("atlas-visual-v2")??"{}")}catch{saved={}}}const p=palettes.find(p=>p.name===saved.palette);if(p){colors=p.colors;document.documentElement.style.setProperty("--accent",colors[0]);document.documentElement.classList.toggle("paper",p.name==="Бумага")}if(Number.isFinite(saved.speed))speed=Math.max(0,Math.min(2,saved.speed));if(Number.isFinite(saved.density))density=Math.max(12,Math.min(180,saved.density));if(Number.isFinite(saved.strength))strength=Math.max(0,Math.min(1,saved.strength));if(Number.isFinite(saved.groupSize))groupSize=Math.max(.55,Math.min(1,saved.groupSize));if(typeof saved.showLabels==="boolean")showLabels=saved.showLabels;$<HTMLInputElement>("speed").value=String(speed);$<HTMLInputElement>("density").value=String(density);$<HTMLInputElement>("strength").value=String(strength);$<HTMLInputElement>("group-size").value=String(groupSize);$<HTMLInputElement>("show-labels").checked=showLabels;renderPalettes();rebuild();refreshPanels()}catch(err){text($("message"),"Настройки: "+String(err))}}
+type AtlasEvent={at:string;kind:string;detail:string};
+let events:AtlasEvent[]=[],month=new Date(),daySelected=dayKey(new Date());
+function dayKey(d:Date){return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")}
+function renderCalendar(){const root=$("calendar");root.replaceChildren();const year=month.getFullYear(),m=month.getMonth();text($("month"),month.toLocaleDateString("ru-RU",{month:"long",year:"numeric"}));for(const w of ["Пн","Вт","Ср","Чт","Пт","Сб","Вс"]){const el=document.createElement("span");el.className="weekday";text(el,w);root.append(el)}const offset=(new Date(year,m,1).getDay()+6)%7;for(let i=0;i<offset;i++)root.append(document.createElement("span"));const counts=new Map<string,number>();for(const e of events){const k=dayKey(new Date(e.at));counts.set(k,(counts.get(k)??0)+1)}for(let d=1;d<=new Date(year,m+1,0).getDate();d++){const k=dayKey(new Date(year,m,d)),b=document.createElement("button");text(b,String(d));b.classList.toggle("day-with-events",counts.has(k));b.classList.toggle("day-today",k===dayKey(new Date()));b.classList.toggle("day-selected",k===daySelected);b.title=(counts.get(k)??0)+" событий";b.onclick=()=>{daySelected=k;renderCalendar()};root.append(b)}const selectedEvents=events.filter(e=>dayKey(new Date(e.at))===daySelected);renderEventRows($("day-events"),selectedEvents,"Нет зарегистрированных событий")}
+function renderEventRows(root:HTMLElement,list:AtlasEvent[],empty:string){root.replaceChildren();if(!list.length){text(root,empty);return}for(const e of list.slice(0,30)){const row=document.createElement("div");row.className="event-row";text(row,new Date(e.at).toLocaleString("ru-RU")+" · "+e.detail);root.append(row)}}
+async function loadEvents(){try{const r=await fetch("/api/events");if(!r.ok)throw Error("API "+r.status);events=await r.json();renderCalendar();renderEventRows($("notices"),events.slice(0,8),"Нет новых событий");text($("system-event"),events[0]?new Date(events[0].at).toLocaleTimeString("ru-RU")+" · "+events[0].detail.slice(0,70):"LOCAL / SQLITE / CANVAS")}catch(err){text($("notices"),"Журнал недоступен: "+String(err))}}
+function renderMatrix(){const el=$("process-matrix");el.replaceChildren();for(let g=0;g<state.categories.length;g++){const ns=nodes.filter(n=>n.category===state.categories[g]);const bins=Array.from({length:7},()=>0);for(const n of ns)bins[Math.abs(n.id)%7]++;for(let i=0;i<7;i++){const b=document.createElement("button");b.className="matrix-cell"+(bins[i]?" active-cell":"");text(b,bins[i]?String(bins[i]):"·");b.title=state.categories[g]+" · "+bins[i]+" записей (группа ID "+i+")";b.onclick=()=>{filter=state.categories[g];refreshPanels()};el.append(b)}}}
+$("prev-month").onclick=()=>{month=new Date(month.getFullYear(),month.getMonth()-1,1);renderCalendar()};$("next-month").onclick=()=>{month=new Date(month.getFullYear(),month.getMonth()+1,1);renderCalendar()};renderCalendar();
+void loadSettings();void loadEvents();
 text($("legend"),"Нажмите на ядро, чтобы открыть полный атлас");
 function clock(){text($("clock"),new Date().toLocaleTimeString("ru-RU"))}clock();setInterval(clock,1000);
 fetch("/api/atlas").then(r=>{if(!r.ok)throw new Error("API "+r.status);return r.json()}).then(setState).catch(err=>{text($("status"),"API недоступен");text($("message"),String(err))});
