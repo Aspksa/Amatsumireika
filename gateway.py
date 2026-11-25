@@ -12,6 +12,7 @@ from urllib.request import Request, build_opener
 from urllib.error import HTTPError, URLError
 import cloud_api
 import cognitive
+import evolution
 import memory_engine as memory
 from pathlib import Path
 import budget
@@ -113,7 +114,7 @@ def submit(path,data):
                 raise ValueError("Do not send API keys in chat")
             for item in context:
                 row=db.execute("SELECT title,category FROM nodes WHERE id=?",(item["id"],)).fetchone()
-                if not row or tuple(row)!=(item["title"],item["category"]) or not cognitive.safe(item["title"]) or key in item["title"]: raise ValueError("Memory selection changed or contains restricted text; preview again")
+                if not row or tuple(row)!=(item["title"],item["category"]) or not cognitive.safe(item["title"]) or key in item["title"] or memory.current_state(db,item["id"])=="historical" or evolution.freshness(db,item["id"])=="review_due": raise ValueError("Запись изменилась, устарела или содержит защищённые данные; обновите предварительный просмотр")
             # Same text within 60 seconds is not billed twice, even with a new ID.
             recent=db.execute("SELECT id FROM cloud_jobs WHERE fingerprint=? AND model=? AND created>=? ORDER BY created DESC LIMIT 1",(fingerprint,model,datetime.fromtimestamp(time.time()-60,timezone.utc).isoformat())).fetchone()
             if recent: 

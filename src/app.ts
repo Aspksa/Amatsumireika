@@ -1,7 +1,7 @@
 export {};
 type NodeRecord={id:number;title:string;category:string;folder?:string;created_at?:string|null};
 type Edge={source:number;target:number};
-type Snapshot={nodes:NodeRecord[];edges:Edge[];categories:string[];revision?:number;causes?:Edge[]};
+type Snapshot={nodes:NodeRecord[];edges:Edge[];categories:string[];revision?:number;causes?:Edge[];total_nodes?:number;total_edges?:number;after?:number;next?:number|null};
 type Point={x:number;y:number};
 type Layout="radial"|"clusters"|"hex"|"force"|"tile"|"hud";
 const $=<T extends HTMLElement>(id:string)=>document.getElementById(id) as T;
@@ -58,13 +58,18 @@ function makeDemo():{nodes:NodeRecord[];edges:Edge[]}{
  return {nodes:ns,edges:es};
 }
 function text(el:HTMLElement,s:string){el.textContent=s}
+let atlasWindow=true,atlasAfter=0,atlasRequest=0;
+function atlasUrl(){return "/api/atlas"+(atlasWindow?"?window=1&after="+atlasAfter:"")}
+async function refreshAtlas(){const req=++atlasRequest;const next:Snapshot=await jsonRequest(atlasUrl());if(req===atlasRequest)setState(next)}
 function setState(s:Snapshot){
  if(s.revision!==undefined&&state.revision!==undefined&&s.revision<state.revision)return;
- const previous=nodeMap,oldEdges=new Set(edges.map(edgeKey));state=s;demo=s.nodes.length===0;const data=demo?makeDemo():s;nodes=data.nodes;edges=data.edges;if(initialized&&!demo){const now=performance.now();for(const n of nodes)if(!previous.has(n.id))freshNodes.set(n.id,now);for(const e of edges)if(!oldEdges.has(edgeKey(e)))freshEdges.set(edgeKey(e),now)}initialized=true;geometryKey="";
+ const previous=nodeMap,oldEdges=new Set(edges.map(edgeKey));state=s;demo=(s.total_nodes??s.nodes.length)===0;const data=demo?makeDemo():s;nodes=data.nodes;edges=data.edges;if(initialized&&!demo){const now=performance.now();for(const n of nodes)if(!previous.has(n.id))freshNodes.set(n.id,now);for(const e of edges)if(!oldEdges.has(edgeKey(e)))freshEdges.set(edgeKey(e),now)}initialized=true;geometryKey="";
  nodeMap=new Map(nodes.map(n=>[n.id,n]));neighbor=new Map();
  for(const e of edges){for(const [a,b] of [[e.source,e.target],[e.target,e.source]]){if(!neighbor.has(a))neighbor.set(a,new Set());neighbor.get(a)!.add(b)}}
  if(selected!==null&&!nodeMap.has(selected))selected=null;hover=null;if(demo)positions.clear();rebuild();refreshPanels();
  text($("status"),demo?"ДЕМО · БД ПУСТА":"ЛОКАЛЬНО · БД АКТИВНА");
+ $("atlas-window-note").textContent=s.total_nodes!==undefined&&s.total_nodes>s.nodes.length?"Окно: "+s.nodes.length+" из "+s.total_nodes+" записей; связи только внутри окна. Поиск всех записей — в памяти.":"";
+ $<HTMLButtonElement>("atlas-window-next").disabled=s.next==null;
 }
 function color(n:NodeRecord){return groupColor(nodeGroups.get(n.id)??Math.max(0,state.categories.indexOf(n.category)))}
 function polar(a:number,r:number):Point{return{x:Math.cos(a)*r,y:Math.sin(a)*r}}
@@ -262,8 +267,8 @@ function refreshPanels(){renderMatrix();const totals=categoryCounts();const over
 }
 function refreshLinkOptions(){const q=$<HTMLInputElement>("link-search").value.trim().toLowerCase();const items=state.nodes.filter(n=>!q||n.title.toLowerCase().includes(q)||String(n.id)===q).slice(0,300).map(n=>({value:String(n.id),label:n.title+" #"+n.id}));for(const id of ["source","target"]){const el=$<HTMLSelectElement>(id),old=nodeMap.get(Number(el.value));options(el,old&&old.id>0&&!items.some(x=>x.value===String(old.id))?[...items,{value:String(old.id),label:old.title+" #"+old.id}]:items)}}
 $("link-search").oninput=refreshLinkOptions;
-function refreshCounts(){text($("counts"),demo?"БД пуста · демонстрационный граф":"Записей "+state.nodes.length+" · Связей "+state.edges.length+" · На карте "+visible.length)}
-async function post(path:string,body:unknown){const r=await fetch(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});const s=await r.json();if(!r.ok)throw new Error(s.error??"Ошибка API");setState(s as Snapshot);signalTime();void loadEvents()}
+function refreshCounts(){text($("counts"),demo?"БД пуста · демонстрационный граф":"Записей "+(state.total_nodes??state.nodes.length)+" · Связей "+(state.total_edges??state.edges.length)+" · На карте "+visible.length)}
+async function post(path:string,body:unknown){const req=++atlasRequest;const r=await fetch(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...body as object,atlas_window:atlasWindow,atlas_after:atlasAfter})});const s=await r.json();if(!r.ok)throw new Error(s.error??"Ошибка API");if(req===atlasRequest)setState(s as Snapshot);signalTime();void loadEvents()}
 $<HTMLFormElement>("add").onsubmit=async e=>{e.preventDefault();try{await post("/api/nodes",{title:$<HTMLInputElement>("title").value,category:$<HTMLSelectElement>("category").value,folder:$<HTMLInputElement>("folder").value});$<HTMLInputElement>("title").value="";text($("message"),"Запись сохранена")}catch(err){text($("message"),String(err))}};
 $<HTMLFormElement>("link").onsubmit=async e=>{e.preventDefault();try{await post("/api/edges",{source:Number($<HTMLSelectElement>("source").value),target:Number($<HTMLSelectElement>("target").value)});text($("message"),"Связь сохранена")}catch(err){text($("message"),String(err))}};
 $("save-settings").onclick=async()=>{try{const r=await fetch("/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({palette:palettes.find(p=>p.colors===colors)?.name,speed,density,strength,groupSize,showLabels,cinemaMode,cinemaPower})});if(!r.ok)throw Error("API "+r.status);text($("message"),"Настройки сохранены в SQLite");void loadEvents()}catch(err){text($("message"),String(err))}};
@@ -751,7 +756,7 @@ function utcBounds(d:Date,period:"day"|"year"){const a=period==="year"?new Date(
 async function jsonRequest(url:string,data?:unknown){const r=await fetch(url,data===undefined?undefined:{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)});const v=await r.json();if(!r.ok)throw Error(v.error??"API "+r.status);return v}
 async function refreshTimeWindow(){const key=daySelected;if(key===timeWindowKey)return;timeWindowKey=key;const req=++timeRequest,d=new Date(key+"T12:00:00");if(!Number.isFinite(d.getTime()))return;try{
  const [day,year]:[TimelineResult,TimelineResult]=await Promise.all([jsonRequest("/api/time/window?"+utcBounds(d,"day")),jsonRequest("/api/time/window?"+utcBounds(d,"year"))]);if(req!==timeRequest)return;
- timeDayCounts.clear();timeCategories.clear();for(const node of state.nodes){if(!node.created_at)continue;const k=dayKey(new Date(node.created_at));if(k.slice(0,4)!==key.slice(0,4))continue;timeDayCounts.set(k,(timeDayCounts.get(k)??0)+1);timeCategories.set(node.category,(timeCategories.get(node.category)??0)+1)}
+ timeDayCounts.clear();timeCategories.clear();const yearNodes=state.total_nodes!==undefined&&state.total_nodes>state.nodes.length?year.nodes.map(n=>({created_at:n.at,category:n.category})):state.nodes;for(const node of yearNodes){if(!node.created_at)continue;const k=dayKey(new Date(node.created_at));if(k.slice(0,4)!==key.slice(0,4))continue;timeDayCounts.set(k,(timeDayCounts.get(k)??0)+1);timeCategories.set(node.category,(timeCategories.get(node.category)??0)+1)}
  for(const item of [...year.events,...year.chats]){if(item.kind==="node")continue;const k=dayKey(new Date(item.at));timeDayCounts.set(k,(timeDayCounts.get(k)??0)+1)}
  timeEventDates=Array.from(timeDayCounts.keys()).sort();text($("time-history-status"),key+" · записей "+day.counts.nodes+" · событий "+day.counts.events+" · сообщений "+day.counts.chats);
  const root=$("time-memory");root.replaceChildren();for(const n of day.nodes.slice(0,50)){const b=document.createElement("button");b.className="entry";text(b,n.category+" · "+n.title);b.onclick=()=>focusNode(n.id);root.append(b)}
@@ -801,7 +806,7 @@ workInput("work-month").onchange=()=>{workInput("work-day").value=workInput("wor
 $<HTMLFormElement>("work-profile-form").onsubmit=e=>{e.preventDefault();void workWrite("/api/work/profiles",{name:workInput("work-name").value,schedule:workSelect("work-schedule").value,anchor:workInput("work-anchor").value,hours:workNumber("work-hours")})};
 $<HTMLFormElement>("work-day-form").onsubmit=e=>{e.preventDefault();void workWrite("/api/work/day",{profile_id:Number(workSelect("work-person").value),day:workInput("work-day").value,planned:workNumber("work-planned"),actual:workNumber("work-actual"),status:workSelect("work-status").value})};
 document.documentElement.setAttribute("data-app-ready","1");
-fetch("/api/atlas").then(r=>{if(!r.ok)throw new Error("API "+r.status);return r.json()}).then(s=>{setState(s);if(timeDataReady){timeWindowKey="";void refreshTimeWindow()}}).catch(err=>{setState({nodes:[],edges:[],categories:state.categories});text($("status"),"API недоступен · демо");text($("message"),String(err))});
+refreshAtlas().then(()=>{if(timeDataReady){timeWindowKey="";void refreshTimeWindow()}}).catch(err=>{setState({nodes:[],edges:[],categories:state.categories});text($("status"),"API недоступен · демо");text($("message"),String(err))});
 
 type CloudState={key_present:boolean;storage:string;model:string;models:string[];status:string;checked:string|null;requests:number;successes:number;failures:number;input_tokens:number;output_tokens:number;generation_requests:number;capabilities?:{id:string;kind:string;capabilities:string[];source:string}[];generation_enabled?:boolean};
 let cloudState:CloudState|null=null,cloudBusy=false;
@@ -867,6 +872,7 @@ let cog:CogData|null=null,cogBusy=false,cogLoading=false,cogEvent=0,cogPulseAt=-
 const cogLabels:Record<string,string>={fact:"Знания",episode:"События",procedure:"Навыки",preference:"Предпочтения",habit:"Привычки",cause:"Причины",goal:"Цели",document:"Документы",emotion:"Эмоции"};
 function drawCognitiveSignals(){
  if(!cog)return;
+ for(const id of Array.from(evoConflictIds).slice(0,400)){const p=positions.get(id);if(p&&screenVisible(p))circle(p.x,p.y,10,"#dc7777aa")}
  const elapsed=performance.now()-cogPulseAt;
  if(elapsed<3500){const ratio=Math.min(1,elapsed/3500),r=expanded?42+ratio*160:42+ratio*78;circle(0,0,reduced?65:r,colors[0]+(reduced?"88":Math.round((1-ratio)*170).toString(16).padStart(2,"0")))}
  for(const id of cogHighlights.slice(0,8)){const p=positions.get(id);if(p&&elapsed<3500){const tint=evoConflictIds.has(id)?"#dc7777":colors[0];line({x:0,y:0},p,tint+"99");circle(p.x,p.y,8,tint+"cc")}}
@@ -891,8 +897,8 @@ function renderCognitive(v:CogData,full:boolean){
  cogRows("cog-skills",v.skills.map(s=>s.name+" · "+s.successes+"/"+s.attempts+" успешных · ошибок "+s.failures));cogRows("cog-goals",v.goals.map(g=>g.title+" · "+(g.state==="done"?"выполнено":"предложение")));cogRows("cog-events",v.events.map(e=>new Date(e.at).toLocaleString("ru-RU")+" · "+e.detail));
 }
 let cogFullPending=false;
-async function loadCognitive(full=false){if(cogBusy||cogLoading){if(full)cogFullPending=true;return}cogLoading=true;try{const v=await jsonRequest("/api/cognitive"+(full?"":"?light=1"));if(cogBusy)return;renderCognitive(v,full);if(v.revision!==state.revision){const next=await jsonRequest("/api/atlas");if(!cogBusy){setState(next);void loadEvents()}}}catch(err){if(full)text($("cog-message"),String(err));else text($("cognitive-live"),"Локальное ядро недоступно")}finally{cogLoading=false;if(cogFullPending&&!cogBusy){cogFullPending=false;void loadCognitive(true)}}}
-async function cogAction(action:string,data:unknown){if(cogBusy)return;cogBusy=true;try{const result=await jsonRequest("/api/cognitive/"+action,data);if(action==="lookup"){cogRows("cog-results",result.results.map((r:{id:number;title:string;score:number})=>"#"+r.id+" · "+r.title+" · "+r.score));cogHighlights=result.results.map((r:{id:number})=>r.id);cogPulseAt=performance.now()}else if(action==="plan"){cogRows("cog-results",result.steps)}else{renderCognitive(result,true);if(["review","relation"].includes(action)){setState(await jsonRequest("/api/atlas"));signalTime()}}text($("cog-message"),"Готово · локальная обработка")}catch(err){text($("cog-message"),String(err))}finally{cogBusy=false;if(cogFullPending){cogFullPending=false;void loadCognitive(true)}}}
+async function loadCognitive(full=false){if(cogBusy||cogLoading){if(full)cogFullPending=true;return}cogLoading=true;try{const v=await jsonRequest("/api/cognitive"+(full?"":"?light=1"));if(cogBusy)return;renderCognitive(v,full);if(v.revision!==state.revision){void syncEvoConflicts();await refreshAtlas();if(!cogBusy){void loadEvents()}}}catch(err){if(full)text($("cog-message"),String(err));else text($("cognitive-live"),"Локальное ядро недоступно")}finally{cogLoading=false;if(cogFullPending&&!cogBusy){cogFullPending=false;void loadCognitive(true)}}}
+async function cogAction(action:string,data:unknown){if(cogBusy)return;cogBusy=true;try{const result=await jsonRequest("/api/cognitive/"+action,data);if(action==="lookup"){cogRows("cog-results",result.results.map((r:{id:number;title:string;score:number;state?:string;freshness?:string})=>"#"+r.id+" · "+r.title+" · "+r.score+" · "+evoLabel(r.state)+" · "+evoLabel(r.freshness)));cogHighlights=result.results.map((r:{id:number})=>r.id);cogPulseAt=performance.now()}else if(action==="plan"){cogRows("cog-results",result.steps)}else{renderCognitive(result,true);if(["review","relation"].includes(action)){await refreshAtlas();signalTime()}}text($("cog-message"),"Готово · локальная обработка")}catch(err){text($("cog-message"),String(err))}finally{cogBusy=false;if(cogFullPending){cogFullPending=false;void loadCognitive(true)}}}
 $("cog-cycle").onclick=()=>void cogAction("cycle",{});
 $("cog-save").onclick=()=>void cogAction("settings",{enabled:$<HTMLInputElement>("cog-enabled").checked,style:$<HTMLSelectElement>("cog-style").value});
 $("cog-cause-save").onclick=()=>void cogAction("relation",{source:Number($<HTMLInputElement>("cog-cause-source").value),target:Number($<HTMLInputElement>("cog-cause-target").value),kind:"cause",action:"approve"});
@@ -902,19 +908,22 @@ $("cog-refresh").onclick=()=>void loadCognitive(true);
 void loadCognitive();setInterval(()=>{if(document.visibilityState!=="hidden"){void loadCognitive(false);if(!chatBusy)void loadChat()}},5000);
 
 type EvoRecord={id:number;title:string;category:string;state?:string;freshness?:string;via?:number;score?:number};
-let evoBusy=false,evoConflictIds=new Set<number>(),evoNext:number|null=0;
-function evoFocus(id:number,ids:number[]=[id]){closeProjectSettings();focusNode(id);cogHighlights=ids;cogPulseAt=performance.now()}
+let evoBusy=false,evoConflictIds=new Set<number>(),evoNext:number|null=0,evoPageRequest=0,evoConflictRequest=0;
+const evoStatus:Record<string,string>={current:"актуальная",historical:"историческая",unverified:"не проверена",reviewed:"проверена",review_due:"срок проверки истёк",unreviewed:"срок не назначен",no_vectors:"нет векторов",no_vector_for_record:"нет вектора записи",invalid_vector:"некорректный вектор",candidates_only:"только кандидаты"};
+function evoLabel(value:string|undefined){return value?(evoStatus[value]??value):""}
+async function syncEvoConflicts(){const req=++evoConflictRequest;try{const v=await jsonRequest("/api/evolution/conflicts");if(req!==evoConflictRequest)return;evoConflictIds=new Set<number>(v.conflicts.flatMap((r:{source:number;target:number})=>[r.source,r.target]))}catch{/* retain last successful state */}}
+async function evoFocus(id:number,ids:number[]=[id]){closeProjectSettings();try{if(!nodeMap.has(id)){atlasWindow=true;atlasAfter=Math.max(0,id-1);await refreshAtlas()}if(nodeMap.has(id))focusNode(id);cogHighlights=ids;cogPulseAt=performance.now()}catch(err){text($("message"),String(err))}}
 async function evoRun(action:string,data?:unknown){if(evoBusy)return;evoBusy=true;try{
  const result=await jsonRequest("/api/evolution"+(action?"/"+action:""),data);
  if(!action){cogRows("evo-clusters",result.clusters.map((r:{category:string;folder:string;count:number})=>r.category+" / "+(r.folder||"Корень")+" · "+r.count));
  const root=$("evo-conflicts");root.replaceChildren();evoConflictIds=new Set<number>();for(const r of result.conflicts){evoConflictIds.add(r.source);evoConflictIds.add(r.target);const p=document.createElement("p");text(p,r.subject+": "+r.source_title+" ↔ "+r.target_title);p.append(cogButton("#"+r.source,()=>{ $<HTMLInputElement>("evo-id").value=String(r.source);evoFocus(r.source,[r.source,r.target])}),cogButton("#"+r.target,()=>{$<HTMLInputElement>("evo-id").value=String(r.target);evoFocus(r.target,[r.source,r.target])}));root.append(p)}if(!result.conflicts.length)text(root,"Нет выявленных структурированных конфликтов");
- cogRows("evo-versions",[...result.versions.map((r:{title:string;state:string;at:string})=>r.title+" · "+r.state+" · "+r.at.slice(0,10)),...result.due.map((r:{title:string})=>"Требует проверки: "+r.title)]);
+ cogRows("evo-versions",[...result.versions.map((r:{title:string;state:string;at:string})=>r.title+" · "+evoLabel(r.state)+" · "+r.at.slice(0,10)),...result.due.map((r:{title:string})=>"Требует проверки: "+r.title)]);
  cogRows("evo-digests",result.digests.map((r:{title:string;source_ids:string})=>r.title+" · источники "+r.source_ids));cogRows("evo-journal",result.journal.map((r:{at:string;detail:string})=>r.at.slice(0,19)+" · "+r.detail));
- }else if(action==="explore"){cogRows("evo-route",result.stages.map((r:{name:string;count:number})=>r.name+" · "+r.count));const root=$("evo-results");root.replaceChildren();for(const [label,records] of [["Основные",result.seeds],["Связанные",result.linked],["Опыт",result.experience]] as [string,EvoRecord[]][]){const p=document.createElement("p");text(p,label+" · "+records.length);root.append(p);for(const r of records){const b=cogButton("#"+r.id+" "+r.title+" · "+(r.state??"")+" "+(r.freshness??""),()=>{$<HTMLInputElement>("evo-id").value=String(r.id)});root.append(b,cogButton("На карте",()=>evoFocus(r.id)))}}cogHighlights=result.seeds.map((r:EvoRecord)=>r.id);cogPulseAt=performance.now();
- }else if(action==="semantic"){cogRows("evo-results",result.pairs.length?result.pairs.map((r:{id:number;title:string;similarity:number})=>"#"+r.id+" "+r.title+" · сходство "+r.similarity):["Нет кандидатов: "+result.status]);}
+ }else if(action==="explore"){cogRows("evo-route",result.stages.map((r:{name:string;count:number})=>r.name+" · "+r.count));const root=$("evo-results");root.replaceChildren();for(const [label,records] of [["Основные",result.seeds],["Связанные",result.linked],["Опыт",result.experience]] as [string,EvoRecord[]][]){const p=document.createElement("p");text(p,label+" · "+records.length);root.append(p);for(const r of records){const b=cogButton("#"+r.id+" "+r.title+" · "+evoLabel(r.state)+" "+evoLabel(r.freshness),()=>{$<HTMLInputElement>("evo-id").value=String(r.id)});root.append(b,cogButton("На карте",()=>evoFocus(r.id)))}}for(const d of result.summaries??[]){const p=document.createElement("p");text(p,"Сводка: "+d.title+" · "+d.source_ids);root.append(p)}cogHighlights=result.seeds.map((r:EvoRecord)=>r.id);cogPulseAt=performance.now();
+ }else if(action==="semantic"){cogRows("evo-results",result.pairs.length?result.pairs.map((r:{id:number;title:string;similarity:number})=>"#"+r.id+" "+r.title+" · сходство "+r.similarity):["Нет кандидатов: "+evoLabel(result.status)]);}
  else if(action==="digest")cogRows("evo-results",[result.title,"Источники: "+result.source_ids.join(", ")]);
  text($("evo-message"),"Готово · без облачных запросов");
- }catch(err){text($("evo-message"),String(err))}finally{evoBusy=false}}
+ }catch(err){text($("evo-message"),String(err))}finally{evoBusy=false;if(["fact","freshness","digest"].includes(action)){void evoRun("");void syncEvoConflicts();void loadCognitive(false)}}}
 const evoId=()=>Number($<HTMLInputElement>("evo-id").value);
 $("evo-refresh").onclick=()=>void evoRun("");
 $("evo-panel").addEventListener("toggle",()=>{if($<HTMLDetailsElement>("evo-panel").open)void evoRun("")});
@@ -924,7 +933,13 @@ $("evo-fact").onclick=()=>void evoRun("fact",{id:evoId(),state:$<HTMLSelectEleme
 $("evo-freshness").onclick=()=>void evoRun("freshness",{id:evoId(),days:Number($<HTMLInputElement>("evo-days").value)});
 $("evo-digest").onclick=()=>void evoRun("digest",{ids:$<HTMLInputElement>("evo-ids").value.split(",").map(x=>Number(x.trim()))});
 
-async function evoPage(after:number){try{const result=await jsonRequest("/api/evolution/page?after="+after+"&limit=100");evoNext=result.next;const root=$("evo-page-results");root.replaceChildren();for(const r of result.nodes as EvoRecord[])root.append(cogButton("#"+r.id+" "+r.title,()=>{$<HTMLInputElement>("evo-id").value=String(r.id)}));$<HTMLButtonElement>("evo-page-next").disabled=evoNext===null}catch(err){text($("evo-message"),String(err))}}
+async function evoPage(after:number){const req=++evoPageRequest;try{const result=await jsonRequest("/api/evolution/page?after="+after+"&limit=100");if(req!==evoPageRequest)return;evoNext=result.next;const root=$("evo-page-results");root.replaceChildren();for(const r of result.nodes as EvoRecord[])root.append(cogButton("#"+r.id+" "+r.title,()=>{$<HTMLInputElement>("evo-id").value=String(r.id)}));$<HTMLButtonElement>("evo-page-next").disabled=evoNext===null}catch(err){if(req===evoPageRequest)text($("evo-message"),String(err))}}
 $("evo-page-first").onclick=()=>void evoPage(0);
 $("evo-page-next").onclick=()=>{if(evoNext!==null)void evoPage(evoNext)};
 $("evo-quality").onclick=async()=>{try{const v=await jsonRequest("/api/evolution/quality");cogRows("evo-quality-result",v.checks.map((r:{name:string;issues:number})=>r.name+": "+r.issues+" нарушений"))}catch(err){text($("evo-quality-result"),String(err))}};
+
+void syncEvoConflicts();
+
+$("atlas-window-first").onclick=()=>{atlasWindow=true;atlasAfter=0;void refreshAtlas().catch(err=>text($("message"),String(err)))};
+$("atlas-window-next").onclick=()=>{if(state.next!=null){atlasWindow=true;atlasAfter=state.next;void refreshAtlas().catch(err=>text($("message"),String(err)))}};
+$("atlas-window-all").onclick=()=>{if((state.total_nodes??0)>10000&&!window.confirm("Загрузить весь граф? Это может увеличить расход памяти."))return;atlasWindow=false;atlasAfter=0;void refreshAtlas().catch(err=>text($("message"),String(err)))};

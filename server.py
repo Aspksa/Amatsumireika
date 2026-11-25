@@ -44,6 +44,12 @@ def initialize():
                 temp=backup.with_suffix(".tmp")
                 with closing(sqlite3.connect(temp)) as dest: db.backup(dest)
                 temp.replace(backup)
+        if db.execute("PRAGMA user_version").fetchone()[0]<6 and memory.table(db,"nodes"):
+            backup=DB.with_name(DB.name+".before-v6.bak")
+            if not backup.exists():
+                temp=backup.with_suffix(".tmp")
+                with closing(sqlite3.connect(temp)) as dest: db.backup(dest)
+                temp.replace(backup)
         db.executescript("""
         CREATE TABLE IF NOT EXISTS nodes(id INTEGER PRIMARY KEY, title TEXT NOT NULL, category TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS edges(source INTEGER REFERENCES nodes(id), target INTEGER REFERENCES nodes(id), PRIMARY KEY(source,target), CHECK(source<target));
@@ -68,9 +74,10 @@ def initialize():
         db.execute("CREATE INDEX IF NOT EXISTS idx_nodes_created ON nodes(created_at)")
         cognitive.init(db)
         evolution.init(db)
+        memory.init_index(db)
         db.execute("CREATE TABLE IF NOT EXISTS atlas_revision(id INTEGER PRIMARY KEY CHECK(id=1),version INTEGER NOT NULL)")
         db.execute("INSERT OR IGNORE INTO atlas_revision VALUES(1,0)")
-        for table in ("nodes","edges","cog_relations","cog_aliases"):
+        for table in ("nodes","edges","cog_relations","cog_aliases","evo_versions","evo_review","cog_memory"):
             for operation in ("INSERT","UPDATE","DELETE"):
                 db.execute(f"CREATE TRIGGER IF NOT EXISTS rev_{table}_{operation.lower()} AFTER {operation} ON {table} BEGIN UPDATE atlas_revision SET version=version+1 WHERE id=1; END")
         if db.execute("PRAGMA user_version").fetchone()[0]<5:
@@ -78,6 +85,8 @@ def initialize():
                 kind=next((k for k,v in cognitive.TYPES.items() if v==category),"fact")
                 db.execute("UPDATE cog_memory SET kind=?,subject=?,fingerprint=? WHERE node_id=? AND source='manual'",(kind,cognitive.subject_of(title,kind),cognitive.digest(kind+"\0"+title),ident))
             db.execute("PRAGMA user_version=5")
+        if db.execute("PRAGMA user_version").fetchone()[0]<6:
+            db.execute("PRAGMA user_version=6")
 
 def event(db, kind, detail):
     db.execute("INSERT INTO atlas_events(at,kind,detail) VALUES(?,?,?)",
@@ -415,7 +424,7 @@ def send_chat(content):
             result=cognitive.adaptive_plan(DB,content[6:],db);append("system","Локальный план: "+"; ".join(result["steps"]))
         elif command.startswith("/найти "):
             # Reuse current connection to avoid a second writer while chat transaction is open.
-            matches=[r["title"] for r in memory.search(db,content[7:],gateway.EMBED_MODEL)]
+            matches=[r["title"]+(" [историческая запись]" if memory.current_state(db,r["id"])=="historical" else "") for r in memory.search(db,content[7:],gateway.EMBED_MODEL)]
             append("system","Локальная память: "+("; ".join(matches) if matches else "Совпадений нет"))
         elif command=="/статус":
             count=db.execute("SELECT COUNT(*) FROM nodes").fetchone()[0]
@@ -431,6 +440,22 @@ def snapshot():
         return {"revision":db.execute("SELECT version FROM atlas_revision WHERE id=1").fetchone()[0],"causes":[dict(source=a,target=b) for a,b in db.execute("SELECT source,target FROM cog_relations WHERE kind='cause' AND state='approved'")],"nodes":[dict(id=i,title=t,category=c,folder=f,created_at=at) for i,t,c,f,at in db.execute("SELECT id,title,category,folder,created_at FROM nodes ORDER BY id")],
                 "edges":[dict(source=s,target=t) for s,t in db.execute("SELECT source,target FROM edges ORDER BY source,target")],
                 "categories":CATEGORIES}
+
+def snapshot_window(after=0,limit=10000):
+    if type(after) is not int or after<0 or type(limit) is not int or not 1<=limit<=10000:
+        raise ValueError("Invalid atlas window")
+    with closing(connect()) as db:
+        db.execute("BEGIN")
+        rows=db.execute("SELECT id,title,category,folder,created_at FROM nodes WHERE id>? ORDER BY id LIMIT ?",(after,limit+1)).fetchall()
+        more=len(rows)>limit;rows=rows[:limit]
+        lo,hi=(rows[0][0],rows[-1][0]) if rows else (0,0)
+        total=db.execute("SELECT COUNT(*) FROM nodes").fetchone()[0]
+        total_edges=db.execute("SELECT COUNT(*) FROM edges").fetchone()[0]
+        return {"revision":db.execute("SELECT version FROM atlas_revision WHERE id=1").fetchone()[0],
+                "nodes":[dict(id=i,title=t,category=c,folder=f,created_at=at) for i,t,c,f,at in rows],
+                "edges":[dict(source=s,target=t) for s,t in db.execute("SELECT source,target FROM edges WHERE source BETWEEN ? AND ? AND target BETWEEN ? AND ? ORDER BY source,target LIMIT 50000",(lo,hi,lo,hi))],
+                "causes":[dict(source=s,target=t) for s,t in db.execute("SELECT source,target FROM cog_relations WHERE kind='cause' AND state='approved' AND source BETWEEN ? AND ? AND target BETWEEN ? AND ? LIMIT 10000",(lo,hi,lo,hi))],
+                "categories":CATEGORIES,"total_nodes":total,"total_edges":total_edges,"after":after,"next":hi if more else None}
 
 def add_node(title, category, folder=""):
     if not isinstance(title,str) or not title.strip() or len(title.strip())>160 or category not in CATEGORIES:
@@ -522,6 +547,9 @@ class Handler(BaseHTTPRequestHandler):
         path=urlsplit(self.path).path
         if path=="/api/health":
             self.reply(200,{"app":"Amatsumireika","instance":self.server.instance,"ready":True})
+        elif path=="/api/evolution/conflicts":
+            with closing(evolution.connect(DB)) as db:
+                self.reply(200,{"conflicts":evolution.conflict_rows(db,200)})
         elif path=="/api/evolution/quality":
             self.reply(200,evolution.quality(DB))
         elif path=="/api/evolution":
@@ -542,7 +570,8 @@ class Handler(BaseHTTPRequestHandler):
         elif path=="/api/cloud/memory":
             self.reply(200,gateway.search(DB,parse_qs(urlsplit(self.path).query).get("q",[""])[0][:3000],gateway.EMBED_MODEL))
         elif path=="/api/atlas":
-            self.reply(200,snapshot())
+            q=parse_qs(urlsplit(self.path).query)
+            self.reply(200,snapshot_window(int(q.get("after",["0"])[0])) if q.get("window",["0"])[0]=="1" else snapshot())
         elif path=="/api/calendar":
             self.reply(200,get_calendars())
         elif path in ("/api/work/profiles","/api/work/report","/api/work/export","/api/time/window","/api/time/snapshots"):
@@ -606,8 +635,8 @@ class Handler(BaseHTTPRequestHandler):
                 elif action=="settings": cognitive.configure(DB,data)
                 elif action=="feedback": cognitive.feedback(DB,data)
                 elif action=="preview":
-                    result=cognitive.lookup(DB,data.get("query"),False)
-                    self.reply(200,{"memory":[{"id":r["id"],"title":r["title"],"category":r["category"]} for r in result["results"] if cognitive.safe(r["title"])][:5]});return
+                    result=evolution.preview(DB,data.get("query"))
+                    self.reply(200,{"memory":[{"id":r["id"],"title":r["title"],"category":r["category"]} for r in result["seeds"]+result["linked"] if cognitive.safe(r["title"]) and r["freshness"]!="review_due"][:5]});return
                 elif action=="lookup":
                     self.reply(200,cognitive.lookup(DB,data.get("query"),True));return
                 elif action=="plan":
@@ -664,7 +693,7 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self.reply(404,{"error":"Not found"})
                 return
-            self.reply(200,snapshot())
+            self.reply(200,snapshot_window(data.get("atlas_after",0)) if data.get("atlas_window") is True else snapshot())
         except (ValueError,TypeError,sqlite3.IntegrityError) as exc:
             self.reply(400,{"error":str(exc)})
         except sqlite3.Error:
