@@ -274,7 +274,8 @@ function dayKey(d:Date){return d.getFullYear()+"-"+String(d.getMonth()+1).padSta
 // 2026: decree 1466, 24.09.2025; 2027: decree 1187, 17.09.2026.
 // Fixed holidays: article 112 of the Labour Code.
 type DayType="work"|"weekend"|"holiday"|"short"|"transfer";
-const productionRules:Record<number,{rest:string[];short:string[]}>={
+type ProductionRule={rest:string[];short:string[];work?:string[]};
+const productionRules:Record<number,ProductionRule>={
  2026:{rest:["01-09","03-09","05-11","12-31"],short:["04-30","05-08","06-11","11-03"]},
  2027:{rest:["02-22","05-03","05-10","06-14","11-05","12-31"],short:["02-20","04-30","06-11","11-03"]}
 };
@@ -288,6 +289,7 @@ function productionDay(d:Date):DayType|null{
  if(officialHolidays.has(key))return "holiday";
  if(rules.short.includes(key))return "short";
  if(rules.rest.includes(key))return "transfer";
+ if(rules.work?.includes(key))return "work";
  return d.getDay()===0||d.getDay()===6?"weekend":"work";
 }
 function yearDates(y:number){const result:Date[]=[];for(let d=new Date(y,0,1,12);d.getFullYear()===y;d.setDate(d.getDate()+1))result.push(new Date(d));return result}
@@ -296,12 +298,19 @@ function productionStats(dates:Date[]){
  let work=0,short=0;for(const d of dates){const t=productionDay(d);if(t==="work"||t==="short")work++;if(t==="short")short++}
  return {work,rest:dates.length-work,short,h40:work*8-short,h36:Math.round((work*7.2-short)*10)/10,h24:Math.round((work*4.8-short)*10)/10};
 }
-let autoYear=true,calendarYear=new Date().getFullYear();
+let autoYear=true,calendarYear=new Date().getFullYear(),detailMonth:number|null=null;
+let birthAt=-100000,birthKey="",calendarAnim=false,clockNotice="",calendarSource="",updatePending=false,lastUpdateDay="";
+function viewDates(y:number){const all=yearDates(y);return detailMonth===null?all:all.filter(d=>d.getMonth()===detailMonth)}
+function elapsedProduction(year:number,now:Date){const dates=yearDates(year),total=productionStats(dates);if(!total)return null;const past=dates.filter(d=>dayKey(d)<dayKey(now)),done=past.length?productionStats(past):{work:0,h40:0};return done?{remaining:total.work-done.work,doneHours:done.h40}:null}
+function rayLength(i:number,n:number){return 12+57*(i+1)/n}
+function eased(t:number){t=Math.max(0,Math.min(1,t));return t*t*(3-2*t)}
+function mixHex(a:string,b:string,t:number){const x=parseInt(a.slice(1),16),y=parseInt(b.slice(1),16);return "#"+[16,8,0].map(k=>Math.round(((x>>k)&255)*(1-t)+((y>>k)&255)*t).toString(16).padStart(2,"0")).join("")}
+function animateBirth(now:Date){birthAt=performance.now();birthKey=dayKey(now);if(reduced||calendarAnim)return;calendarAnim=true;const tick=()=>{drawYear(new Date());if(performance.now()-birthAt<1400)requestAnimationFrame(tick);else calendarAnim=false};requestAnimationFrame(tick)}
 const wheel=$<HTMLCanvasElement>("year-wheel"),wheelCtx=wheel.getContext("2d")!;
 function displayedYear(now:Date){return autoYear?now.getFullYear():calendarYear}
 function elapsedDays(year:number,now:Date){const key=dayKey(now);return yearDates(year).filter(d=>dayKey(d)<=key).length}
 function drawYear(now=new Date()){
- const y=displayedYear(now),days=yearDates(y),today=dayKey(now),selected=daySelected;
+ const y=displayedYear(now),days=viewDates(y),today=dayKey(now),selected=daySelected;const elapsed=performance.now()-birthAt,birth=!reduced&&elapsed>=0&&elapsed<1400;
  const box=wheel.getBoundingClientRect();const side=Math.max(1,Math.min(box.width,box.height));if(side<=1)return;
  const size=Math.max(1,Math.round(side*Math.min(devicePixelRatio||1,2)));if(wheel.width!==size)wheel.width=size;if(wheel.height!==size)wheel.height=size;
  const c=wheelCtx;c.setTransform(size/320,0,0,size/320,0,0);c.clearRect(0,0,320,320);
@@ -309,39 +318,45 @@ function drawYear(now=new Date()){
  const dark=!paper(),base=dark?"#273a45":"#c9c7bf",ink=dark?"#9db1be":"#52646c",gold=dark?"#eac275":"#987026";
  const point=(angle:number,r:number)=>({x:center+Math.cos(angle)*r,y:center+Math.sin(angle)*r});
  function stroke(a:number,b:number,r:number,color:string,w:number){c.beginPath();c.arc(center,center,r,a,b);c.strokeStyle=color;c.lineWidth=w;c.stroke()}
- stroke(0,tau,inner-4,base,.8);stroke(0,tau,inner-10,base,.5);stroke(0,tau,140,base,.5);
+ stroke(0,tau,inner-4,base,.8);stroke(0,tau,inner-10,base,.5);stroke(0,tau,140,base,.5);stroke(0,tau,inner-1,dark?"#142631":"#e4e0d6",2.3);stroke(0,tau,142,base,.3);
  for(let i=0;i<60;i++){const angle=-Math.PI/2+i*tau/60,p=point(angle,inner-9),q=point(angle,inner-(i%5===0?15:12));c.beginPath();c.moveTo(p.x,p.y);c.lineTo(q.x,q.y);c.strokeStyle=i%5===0?gold:base;c.lineWidth=i%5===0?1:.6;c.stroke()}
  for(let i=0;i<days.length;i++){
   const d=days[i],key=dayKey(d),type=productionDay(d),angle=-Math.PI/2+(i+.5)*step,passed=key<=today;
   // Ray height grows with the ordinal day; a new ray is filled at local midnight.
-  const length=12+57*(i+1)/days.length,tip=inner+length,p=point(angle,inner),q=point(angle,tip);
-  c.globalAlpha=passed?1:.19;c.strokeStyle=type?dayColors[type]:base;c.lineWidth=key===today?2:1.02;c.beginPath();c.moveTo(p.x,p.y);c.lineTo(q.x,q.y);c.stroke();c.globalAlpha=1;
-  if(key===today||key===selected){const k=point(angle,tip+3);c.beginPath();c.arc(k.x,k.y,key===today?2.5:1.6,0,tau);c.fillStyle=key===today?gold:ink;c.fill()}
-  if(d.getDate()===1){const p1=point(angle-step/2,inner-1),p2=point(angle-step/2,141);c.strokeStyle=base;c.lineWidth=.7;c.beginPath();c.moveTo(p1.x,p1.y);c.lineTo(p2.x,p2.y);c.stroke()}
+  const length=rayLength(i,days.length)*(birth&&key===birthKey?eased(elapsed/800):1),tip=inner+length,p=point(angle,inner),q=point(angle,tip);const col=type?dayColors[type]:base;
+  c.globalAlpha=passed?1:.14;c.strokeStyle=mixHex(col,base,.45);c.lineWidth=detailMonth===null?1.35:3.6;c.beginPath();c.moveTo(p.x,p.y);c.lineTo(q.x,q.y);c.stroke();
+  const mid=point(angle,inner+length*.48);c.strokeStyle=mixHex(col,gold,.10);c.lineWidth=detailMonth===null?1.02:2.7;c.beginPath();c.moveTo(mid.x,mid.y);c.lineTo(q.x,q.y);c.stroke();c.globalAlpha=1;
+  if(key===today||key===selected){const k=point(angle,tip+3);if(key===today){c.globalAlpha=.13;c.fillStyle=gold;c.beginPath();c.arc(k.x,k.y,7,0,tau);c.fill();c.globalAlpha=1;stroke(angle-step*.65,angle+step*.65,tip+3,gold,1.7)}c.beginPath();c.arc(k.x,k.y,key===today?2.5:1.6,0,tau);c.fillStyle=key===today?gold:ink;c.fill()}
+  if(detailMonth===null&&d.getDate()===1){const p1=point(angle-step/2,inner-1),p2=point(angle-step/2,141);c.strokeStyle=base;c.lineWidth=.7;c.beginPath();c.moveTo(p1.x,p1.y);c.lineTo(p2.x,p2.y);c.stroke()}
  }
- for(let m=0;m<12;m++){const first=days.findIndex(d=>d.getMonth()===m),n=new Date(y,m+1,0).getDate(),angle=-Math.PI/2+(first+n/2)*step,p=point(angle,151);c.font="9px "+mono;c.textAlign="center";c.textBaseline="middle";c.fillStyle=now.getFullYear()===y&&now.getMonth()===m?gold:ink;c.fillText(monthNames[m],p.x,p.y)}
- const progress=elapsedDays(y,now)/days.length;stroke(-Math.PI/2,-Math.PI/2+progress*tau,inner-3,gold,1.1);
+ if(detailMonth===null){for(let m=0;m<12;m++){const first=days.findIndex(d=>d.getMonth()===m),n=new Date(y,m+1,0).getDate(),angle=-Math.PI/2+(first+n/2)*step,p=point(angle,151);c.font="9px "+mono;c.textAlign="center";c.textBaseline="middle";c.fillStyle=now.getFullYear()===y&&now.getMonth()===m?gold:ink;c.fillText(monthNames[m],p.x,p.y)}}else{for(let i=0;i<days.length;i++){const a=-Math.PI/2+(i+.5)*step,p=point(a,151);c.font="8px "+mono;c.textAlign="center";c.textBaseline="middle";c.fillStyle=dayKey(days[i])===today?gold:ink;c.fillText(String(i+1),p.x,p.y)}}
+ const progress=days.filter(d=>dayKey(d)<=today).length/days.length;stroke(-Math.PI/2,-Math.PI/2+progress*tau,inner-3,gold,1.1);if(birth&&days.some(d=>dayKey(d)===birthKey)){c.globalAlpha=(1-elapsed/1400)*.55;stroke(0,tau,inner+72*eased(elapsed/1400),gold,1.6);c.globalAlpha=1}
 }
 function renderCalendar(now=new Date()){
  const year=displayedYear(now),days=yearDates(year),stats=productionStats(days),current=daySelected.slice(0,4)===String(year)?new Date(daySelected+"T12:00:00"):new Date(year,0,1,12);
  const selected=dayKey(current);daySelected=selected;month=current;
  for(const [id,active] of [["year-2026",!autoYear&&year===2026],["year-auto",autoYear],["year-2027",!autoYear&&year===2027]] as [string,boolean][]){$(id).classList.toggle("active",active);$(id).setAttribute("aria-pressed",String(active))}
  $<HTMLInputElement>("selected-date").value=selected;
- text($("year-progress"),elapsedDays(year,now)+" / "+days.length);
+ const shown=viewDates(year);text($("year-progress"),shown.filter(d=>dayKey(d)<=dayKey(now)).length+" / "+shown.length);text($("chrono-level"),detailMonth===null?"Год":monthNames[detailMonth]+" · "+year);$("chrono-back").hidden=detailMonth===null;
  text($("prod-period"),String(year));
  text($("prod-work"),stats?String(stats.work):"—");text($("prod-rest"),stats?String(stats.rest):"—");text($("prod-hours"),stats?String(stats.h40):"—");
  const ms=productionStats(days.filter(d=>d.getMonth()===current.getMonth())),num=(n:number)=>n.toLocaleString("ru-RU");
  text($("prod-month"),ms?monthNames[current.getMonth()]+" · "+ms.work+" раб. / "+ms.rest+" вых. · "+ms.h40+" ч":"");
  text($("prod-norms"),stats?"36 ч — "+num(stats.h36)+" · 24 ч — "+num(stats.h24):"");
- text($("prod-warning"),stats?"":"Нет утверждённых данных на этот год");
+ const ep=elapsedProduction(year,now);text($("prod-remaining"),ep?String(ep.remaining):"—");text($("prod-done"),ep?String(ep.doneHours):"—");text($("prod-warning"),[stats?"":"Нет утверждённых данных на этот год",clockNotice].filter(Boolean).join(" · "));
  const kind=productionDay(current);text($("day-type"),kind?dayNames[kind]:"Тип дня неизвестен");
  renderEventRows($("day-events"),events.filter(e=>dayKey(new Date(e.at))===selected),"Нет зарегистрированных событий");
  drawYear(now);
 }
-function chooseCalendarYear(year:number|null,now=new Date()){autoYear=year===null;calendarYear=year??now.getFullYear();daySelected=calendarYear===now.getFullYear()?dayKey(now):dayKey(new Date(calendarYear,0,1,12));renderCalendar(now)}
+function chooseCalendarYear(year:number|null,now=new Date()){detailMonth=null;autoYear=year===null;calendarYear=year??now.getFullYear();daySelected=calendarYear===now.getFullYear()?dayKey(now):dayKey(new Date(calendarYear,0,1,12));renderCalendar(now)}
 $("year-2026").onclick=()=>chooseCalendarYear(2026);$("year-2027").onclick=()=>chooseCalendarYear(2027);$("year-auto").onclick=()=>chooseCalendarYear(null);$("today").onclick=()=>chooseCalendarYear(null);
-$<HTMLInputElement>("selected-date").onchange=e=>{const value=(e.target as HTMLInputElement).value;if(!/^202[67]-\d{2}-\d{2}$/.test(value))return;const d=new Date(value+"T12:00:00");if(dayKey(d)!==value)return;calendarYear=d.getFullYear();autoYear=calendarYear===new Date().getFullYear();daySelected=value;renderCalendar()};
-wheel.addEventListener("pointerup",e=>{const rect=wheel.getBoundingClientRect(),x=(e.clientX-rect.left)/rect.width*320-160,y=(e.clientY-rect.top)/rect.height*320-160,r=Math.hypot(x,y);if(r<66||r>158)return;const days=yearDates(displayedYear(new Date())),angle=(Math.atan2(y,x)+Math.PI/2+tau)%tau,d=days[Math.min(days.length-1,Math.floor(angle/tau*days.length))];daySelected=dayKey(d);renderCalendar()});
+$<HTMLInputElement>("selected-date").onchange=e=>{const value=(e.target as HTMLInputElement).value;if(!/^\d{4}-\d{2}-\d{2}$/.test(value))return;const d=new Date(value+"T12:00:00");if(dayKey(d)!==value)return;calendarYear=d.getFullYear();autoYear=calendarYear===new Date().getFullYear();detailMonth=null;daySelected=value;renderCalendar()};
+function openCalendarMonth(m:number,now=new Date()){if(m<0||m>11)return;detailMonth=m;const y=displayedYear(now);if(daySelected.slice(0,7)!==dayKey(new Date(y,m,1)).slice(0,7))daySelected=dayKey(new Date(y,m,1,12));renderCalendar(now)}
+function closeCalendarMonth(now=new Date()){detailMonth=null;renderCalendar(now)}
+$("chrono-back").onclick=()=>closeCalendarMonth();
+$("prod-month").onclick=()=>openCalendarMonth(month.getMonth());
+wheel.addEventListener("pointerup",e=>{const rect=wheel.getBoundingClientRect();if(!rect.width||!rect.height)return;const x=(e.clientX-rect.left)/rect.width*320-160,y=(e.clientY-rect.top)/rect.height*320-160,r=Math.hypot(x,y);if(r<66||r>160)return;const days=viewDates(displayedYear(new Date())),angle=(Math.atan2(y,x)+Math.PI/2+tau)%tau,d=days[Math.min(days.length-1,Math.floor(angle/tau*days.length))];if(detailMonth===null&&r>=142){openCalendarMonth(d.getMonth());return}daySelected=dayKey(d);renderCalendar()});
+wheel.addEventListener("dblclick",e=>{e.preventDefault();closeCalendarMonth()});
 new ResizeObserver(()=>drawYear()).observe(wheel);
 function renderEventRows(root:HTMLElement,list:AtlasEvent[],empty:string){root.replaceChildren();if(!list.length){text(root,empty);return}for(const e of list.slice(0,30)){const row=document.createElement("div");row.className="event-row";text(row,new Date(e.at).toLocaleString("ru-RU")+" · "+e.detail);root.append(row)}}
 async function loadEvents(){try{const r=await fetch("/api/events");if(!r.ok)throw Error("API "+r.status);events=await r.json();renderCalendar();renderMatrix();renderEventRows($("notices"),events.slice(0,8),"Нет новых событий");text($("system-event"),events[0]?new Date(events[0].at).toLocaleTimeString("ru-RU")+" · "+events[0].detail.slice(0,70):"LOCAL / SQLITE / CANVAS")}catch(err){text($("notices"),"Журнал недоступен: "+String(err))}}
@@ -351,9 +366,14 @@ function syncRanges(){for(const id of ["speed","strength","group-size","density"
 document.addEventListener("input",syncRanges);setInterval(syncRanges,250);syncRanges();$("toggle-panel").onclick=()=>{const hidden=document.body.classList.toggle("panel-hidden");$("toggle-panel").setAttribute("aria-pressed",String(hidden));resize()};
 void loadSettings();void loadEvents();
 text($("legend"),"Нажмите на ядро, чтобы открыть полный атлас");
-let lastDay=dayKey(new Date());
-function updateCalendarDate(now:Date){const key=dayKey(now);if(key!==lastDay){const rollover=key.slice(0,4)!==lastDay.slice(0,4),wasToday=daySelected===lastDay;lastDay=key;if(rollover){autoYear=true;calendarYear=now.getFullYear();daySelected=key}else if(autoYear&&wasToday)daySelected=key;renderCalendar(now)}}
-function clock(){const now=new Date();text($("clock"),now.toLocaleTimeString("ru-RU"));text($("clock-date"),now.toLocaleDateString("ru-RU",{day:"numeric",month:"short",weekday:"short"}));updateCalendarDate(now)}clock();setInterval(clock,1000);
+let lastDay=dayKey(new Date()),lastWall=Date.now(),lastMono=performance.now();
+function updateCalendarDate(now:Date){const key=dayKey(now);if(key!==lastDay){const lastDayBefore=lastDay,rollover=key.slice(0,4)!==lastDay.slice(0,4),wasToday=daySelected===lastDay;lastDay=key;if(rollover){autoYear=true;calendarYear=now.getFullYear();daySelected=key;detailMonth=null}else if(autoYear&&wasToday){daySelected=key;if(detailMonth!==null)detailMonth=now.getMonth()}if(key>lastDayBefore)animateBirth(now);renderCalendar(now)}}
+function checkClock(now:Date,monoNow:number){const delta=now.getTime()-lastWall,monotonic=monoNow-lastMono;lastWall=now.getTime();lastMono=monoNow;const before=clockNotice;if(delta< -2000||Math.abs(delta-monotonic)>5000)clockNotice="Системное время изменилось или ПК проснулся";if(before!==clockNotice)renderCalendar(now)}
+function clock(){const now=new Date();checkClock(now,performance.now());text($("clock"),now.toLocaleTimeString("ru-RU"));text($("clock-date"),now.toLocaleDateString("ru-RU",{day:"numeric",month:"short",weekday:"short"}));updateCalendarDate(now);if(!productionRules[now.getFullYear()]&&lastUpdateDay!==dayKey(now)){lastUpdateDay=dayKey(now);void loadCalendarUpdates(true)}}clock();setInterval(clock,1000);
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")clock()});
+async function loadCalendarUpdates(refresh=false){if(updatePending)return;updatePending=true;try{const r=await fetch("/api/calendar"+(refresh?"/refresh":""),refresh?{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"}:undefined);if(!r.ok)throw Error("API "+r.status);const data=await r.json();for(const rule of data.calendars??[]){if(!productionRules[rule.year])productionRules[rule.year]={rest:rule.rest,short:rule.short,work:rule.work}}calendarSource=data.status??"Локальные данные";text($("calendar-update-status"),calendarSource);renderCalendar()}catch{ text($("calendar-update-status"),"Обновление недоступно · сохранены локальные данные")}finally{updatePending=false}}
+$("calendar-refresh").onclick=()=>void loadCalendarUpdates(true);void loadCalendarUpdates();
+
 type ChatMessage={id:number;role:"user"|"system";content:string;created_at:string};
 let chatBusy=false,chatReady=false,chatMessages:ChatMessage[]=[];
 const chatInput=$<HTMLTextAreaElement>("chat-input"),chatSend=$<HTMLButtonElement>("chat-send");
