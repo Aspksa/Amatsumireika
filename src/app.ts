@@ -300,8 +300,8 @@ function productionStats(dates:Date[]){
 }
 let autoYear=true,calendarYear=new Date().getFullYear(),detailMonth:number|null=null;
 let birthAt=-100000,birthKey="",calendarAnim=false,clockNotice="",calendarSource="",updatePending=false,lastUpdateDay="";
-type TimeShape="spiral"|"dna"|"galaxy"|"sphere"|"crystal"|"fabric"|"years";
-const timeShapes:TimeShape[]=["spiral","dna","galaxy","sphere","crystal","fabric","years"];
+type TimeShape="spiral"|"dna"|"galaxy"|"sphere"|"crystal"|"fabric"|"years"|"projection";
+const timeShapes:TimeShape[]=["spiral","dna","galaxy","sphere","crystal","fabric","years","projection"];
 let timeShape:TimeShape="spiral",oldShape:TimeShape="spiral",morphAt=-100000,monthPulse=-100000,yearPulse=-100000;
 let historyDate:string|null=null,playbackAt=0,playbackRunning=false,playbackKind:"year"|"events"="year",playbackDays:string[]=[];
 let timeCursor:Point={x:0,y:0},timeFrame=0,timeFrameMs=0,timeQuality=1,timeLast=0,timePulse=-100000;
@@ -317,7 +317,8 @@ function timeShapePoint(shape:TimeShape,i:number,n:number,year:number,outer:bool
  const f=(i+.5)/n,a=-Math.PI/2+tau*f,base=69,length=rayLength(i,n),r=outer?base+length:base;
  if(shape==="spiral")return timePoint(a,r);
  if(shape==="dna"){const wave=Math.sin(a*2),offset=outer?15:-15;return timePoint(a,96+28*wave+offset*Math.cos(a*2))}
- if(shape==="galaxy"){const arm=i%3,b=-Math.PI/2+arm*tau/3+f*tau*.75;return timePoint(b,outer?75+63*f:65+60*f)}
+ if(shape==="projection"){const x=Math.cos(a),y=Math.sin(a),z=Math.cos(a*3),w=Math.sin(a*3),theta=(year%19)*.09;const u=x*Math.cos(theta)-w*Math.sin(theta),v=x*Math.sin(theta)+w*Math.cos(theta),k=(outer?112:98)/(2.8-v);return{x:160+u*k*1.65,y:160+(y*.85+z*.4)*k*1.65}}
+ if(shape==="galaxy"){const arm=i%3,b=-Math.PI/2+arm*tau/3+f*tau*.75+(year%7)*.04;return timePoint(b,outer?75+63*f:65+60*f)}
  if(shape==="sphere"){const lat=Math.acos(1-2*f),lon=i*2.399963;const size=outer?131:118;return{x:160+Math.cos(lon)*Math.sin(lat)*size,y:160+Math.cos(lat)*size*.84+Math.sin(lon)*Math.sin(lat)*size*.18}}
  if(shape==="crystal"){const fac=Math.cos(Math.PI/6)/Math.cos(((a+Math.PI*4)%(Math.PI/3))-Math.PI/6);return timePoint(a,r*fac)}
  if(shape==="fabric"){const k=Math.sin(a*5+year*.1);return timePoint(a,r-12*Math.sin(a*3)+(outer?7:-7)*k)}
@@ -345,17 +346,17 @@ function drawAlternate(now:Date,y:number,c:CanvasRenderingContext2D,base:string,
  if(k===daySelected||k===reference){c.globalAlpha=1;c.fillStyle=gold;c.beginPath();c.arc(v.q.x,v.q.y,3,0,tau);c.fill()}
  }
  c.globalAlpha=1;
- if(timeShape==="years"){for(let offset=-1;offset<=1;offset+=2){const yy=y+offset,rr=offset<0?77:140;c.strokeStyle=base;c.lineWidth=2;c.beginPath();c.arc(160,160,rr,0,tau);c.stroke();c.strokeStyle=gold;c.lineWidth=.8;c.beginPath();c.arc(160,160,rr,-Math.PI/2,-Math.PI/2+tau*elapsedDays(yy,now)/geometryDates(yy).length);c.stroke()}}
+ if(timeShape==="years"){for(let offset=-2;offset<=2;offset++){if(offset===0)continue;const yy=y+offset,rr=104+offset*17;c.strokeStyle=base;c.lineWidth=2;c.beginPath();c.arc(160,160,rr,0,tau);c.stroke();c.strokeStyle=gold;c.lineWidth=.8;c.beginPath();c.arc(160,160,rr,-Math.PI/2,-Math.PI/2+tau*elapsedDays(yy,now)/geometryDates(yy).length);c.stroke();c.font="8px "+mono;c.textAlign="center";c.fillStyle=gold;c.fillText(String(yy),160,160-rr+7)}}else if(detailMonth===null){for(let m=0;m<12;m++){const ds=geometryDates(y),i=ds.findIndex(d=>d.getMonth()===m)+Math.floor(new Date(y,m+1,0).getDate()/2),q=timePoint(-Math.PI/2+tau*(i+.5)/ds.length,151);c.font="8px "+mono;c.textAlign="center";c.fillStyle=base==="#273a45"?"#9db1be":"#52646c";c.fillText(monthNames[m],q.x,q.y)}}
 }
-function signalTime(){timePulse=performance.now();timeWindowKey="";if(timeDataReady)void refreshTimeWindow()}
-function historySelect(value:string|null){historyDate=value;if(value){const d=new Date(value+"T12:00:00");if(!Number.isFinite(d.getTime())){historyDate=null;return}autoYear=false;calendarYear=d.getFullYear();detailMonth=null;daySelected=value}else chooseCalendarYear(null);renderCalendar()}
+function signalTime(){timePulse=performance.now();$("stage").classList.remove("time-signal");if(!reduced){void $("stage").offsetWidth;$("stage").classList.add("time-signal")}timeWindowKey="";if(timeDataReady)void refreshTimeWindow()}
+function historySelect(value:string|null){playbackRunning=false;historyDate=value;if(value){const d=new Date(value+"T12:00:00");if(!Number.isFinite(d.getTime())){historyDate=null;return}autoYear=false;calendarYear=d.getFullYear();detailMonth=null;daySelected=value}else chooseCalendarYear(null);renderCalendar()}
 function startTimePlayback(kind:"year"|"events"){playbackKind=kind;playbackDays=kind==="year"?geometryDates(displayedYear(new Date())).map(dayKey):timeEventDates.slice();if(!playbackDays.length){text($("time-history-status"),"Нет дат для воспроизведения");return}playbackAt=performance.now();playbackRunning=true;historyDate=playbackDays[0];requestAnimationFrame(playTime)}
 function playTime(now:number){if(!playbackRunning)return;const i=Math.min(playbackDays.length-1,Math.floor((now-playbackAt)/Math.max(65,14000/playbackDays.length)));historyDate=playbackDays[i];daySelected=historyDate;calendarYear=Number(historyDate.slice(0,4));autoYear=false;detailMonth=null;drawYear();text($("time-history-status"),"Просмотр "+historyDate);if(i+1>=playbackDays.length){playbackRunning=false;renderCalendar()}else requestAnimationFrame(playTime)}
 function stopTimePlayback(){playbackRunning=false;historyDate=null;chooseCalendarYear(null)}
 function overlayFrame(now:number){
  if(!timeOverlay||!timeOverlayCtx)return;requestAnimationFrame(overlayFrame);
  if(expanded||document.visibilityState==="hidden")return;
- const interval=timeQuality===1?33:66;if(now-timeLast<interval)return;
+ const interval=reduced?1000:timeQuality===1?33:66;if(now-timeLast<interval)return;
  const delta=timeLast?Math.min(200,now-timeLast):interval;timeLast=now;timeFrameMs=timeFrameMs*.94+delta*.06;timeFrame++;if(timeFrame%60===0)timeQuality=timeFrameMs>48?.5:1;
  const c=timeOverlayCtx,sz=wheel.width;if(timeOverlay.width!==sz)timeOverlay.width=sz;if(timeOverlay.height!==sz)timeOverlay.height=sz;
  c.setTransform(sz/320,0,0,sz/320,0,0);c.clearRect(0,0,320,320);
@@ -366,6 +367,8 @@ function overlayFrame(now:number){
  const p=timePoint(angle,56);c.fillStyle=warm;c.beginPath();c.arc(p.x,p.y,reduced?1.8:2.3+.4*Math.sin(phase*6),0,tau);c.fill();
  if(!reduced){const count=timeQuality===1?40:18;for(let i=0;i<count;i++){const a=i*2.399963+phase*(i%2?.17:-.09),r=19+(i%13)*3.2;const pull=.8*Math.sin(phase+i),q=timePoint(a,r+pull);c.globalAlpha=.11+(i%4)*.055;c.fillStyle=warm;c.beginPath();c.arc(q.x+timeCursor.x*.015,q.y+timeCursor.y*.015,i%7===0?1.1:.55,0,tau);c.fill()}c.globalAlpha=1;
  const marker=timePoint(angle,56);for(let i=1;i<=5;i++){c.globalAlpha=(6-i)*.055;c.fillStyle=warm;c.beginPath();c.arc(marker.x,marker.y,2+i*1.4,0,tau);c.fill()}c.globalAlpha=1;
+ const year=displayedYear(d),days=geometryDates(year),ref=dayKey(timeReference(d));const ordinal=days.findIndex(x=>dayKey(x)===ref);if(ordinal>=0&&timeShape==="spiral"){const a=-Math.PI/2+tau*(ordinal+.5)/days.length,tip=69+rayLength(ordinal,days.length),q=timePoint(a,tip+4);const g=c.createRadialGradient(q.x,q.y,0,q.x,q.y,12);g.addColorStop(0,"#fff0c6");g.addColorStop(.3,"#eac27570");g.addColorStop(1,"#eac27500");c.fillStyle=g;c.beginPath();c.arc(q.x,q.y,12,0,tau);c.fill();for(let i=0;i<7;i++){const f=((phase*.08+i/7)%1)*(ordinal+1)/days.length,aa=-Math.PI/2+tau*f,qq=timePoint(aa,69+12+57*f);c.fillStyle="#eac275";c.globalAlpha=.3+.4*f;c.beginPath();c.arc(qq.x,qq.y,1,0,tau);c.fill()}c.globalAlpha=1}
+ const transition=(now-yearPulse)/1800;if(transition>=0&&transition<1){for(let i=0;i<32;i++){const a=i*tau/32+transition*.6,q=timePoint(a,130*(1-transition)+18),radius=1.5*(1-transition);c.fillStyle="#bfa0e8";c.globalAlpha=1-transition;c.beginPath();c.arc(q.x,q.y,radius,0,tau);c.fill()}c.globalAlpha=1}
  for(const [at,col] of [[monthPulse,"#eac275"],[yearPulse,"#bfa0e8"],[timePulse,"#41d9cc"]] as [number,string][]){const f=(now-at)/1600;if(f>=0&&f<1){c.globalAlpha=(1-f)*.65;ring(65+eased(f)*88,0,tau,col,1.5);c.globalAlpha=1}}
  }
  if(timeFrame%60===0)text($("time-performance"),Math.round(timeFrameMs)+" мс между кадрами · "+(timeQuality===1?"обычный":"экономный")+" режим");
@@ -483,16 +486,16 @@ wheel.addEventListener("pointermove",e=>{const rect=wheel.getBoundingClientRect(
 timeOverlay=$<HTMLCanvasElement>("time-overlay");timeOverlayCtx=timeOverlay.getContext("2d");requestAnimationFrame(overlayFrame);
 timeDataReady=true;void refreshTimeWindow();void renderTimeSnapshots();
 type WorkProfile={id:number;name:string;schedule:string;anchor:string;hours:number};
-type WorkRow={profile_id:number;name:string;day:string;planned:number|null;actual:number|null;status:string;difference:number|null};
+type WorkRow={profile_id:number;name:string;day:string;planned:number|null;override?:number|null;actual:number|null;status:string;difference:number|null};
 type WorkReport={month:string;profiles:WorkProfile[];rows:WorkRow[];summary:{profile_id:number;name:string;planned:number;actual:number;difference:number;unknown:number;missing:number}[]};
 let workReportData:WorkReport|null=null,workRequest=0,workBusy=false;
 const workInput=(id:string)=>$<HTMLInputElement>(id),workSelect=(id:string)=>$<HTMLSelectElement>(id);
 function workNumber(id:string){const v=workInput(id).value.trim();return v===""?null:Number(v)}
-function renderWorkDay(){const p=Number(workSelect("work-person").value),d=workInput("work-day").value,r=workReportData?.rows.find(r=>r.profile_id===p&&r.day===d);workInput("work-planned").value=r?.planned==null?"":String(r.planned);workInput("work-actual").value=r?.actual==null?"":String(r.actual);workSelect("work-status").value=r?.status??"normal"}
+function renderWorkDay(){const p=Number(workSelect("work-person").value),d=workInput("work-day").value,r=workReportData?.rows.find(r=>r.profile_id===p&&r.day===d);workInput("work-planned").value=r?.override==null?"":String(r.override);workInput("work-planned").placeholder=r?.planned==null?"Не задан":("Авто: "+r.planned+" ч");workInput("work-actual").value=r?.actual==null?"":String(r.actual);workSelect("work-status").value=r?.status??"normal"}
 function renderWork(report:WorkReport){workReportData=report;options(workSelect("work-person"),report.profiles.map(p=>({value:String(p.id),label:p.name+" · "+p.schedule})));const root=$("work-summary");root.replaceChildren();
  for(const p of report.summary.slice(0,200)){const row=document.createElement("div");row.className="work-person-row";const head=document.createElement("strong");text(head,p.name);const bar=document.createElement("div");bar.className="work-bar";const fill=document.createElement("i");fill.style.width=(p.planned?Math.min(100,p.actual/p.planned*100):0)+"%";bar.append(fill);const meta=document.createElement("small");text(meta,"План "+p.planned+" ч · факт "+p.actual+" ч · Δ "+p.difference+" ч · нет факта: "+p.missing+(p.unknown?" · не задан план: "+p.unknown:""));row.append(head,bar,meta);root.append(row)}
  if(!report.profiles.length)text(root,"Добавьте сотрудника");renderWorkDay();
- const tbody=$("work-table");tbody.replaceChildren();const id=Number(workSelect("work-person").value);for(const r of report.rows.filter(x=>x.profile_id===id)){const row=document.createElement("div");row.className="work-day-row";text(row,r.day.slice(8)+" · "+(r.planned??"—")+" / "+(r.actual??"—")+" ч");row.onclick=()=>{workInput("work-day").value=r.day;renderWorkDay()};tbody.append(row)}
+ const tbody=$("work-table");tbody.replaceChildren();const id=Number(workSelect("work-person").value);const today=dayKey(new Date()),upcoming=report.rows.filter(x=>x.day>=today&&x.profile_id===id),remaining=upcoming.reduce((sum,x)=>sum+(x.planned??0),0);text($("work-forecast"),"Предстоящий план месяца: "+remaining+" ч"+(upcoming.some(x=>x.planned===null)?" · часть смен не задана":""));for(const r of report.rows.filter(x=>x.profile_id===id)){const row=document.createElement("button");row.className="work-day-row";text(row,r.day.slice(8)+" · "+(r.planned??"—")+" / "+(r.actual??"—")+" ч");row.onclick=()=>{workInput("work-day").value=r.day;renderWorkDay()};tbody.append(row)}
  const exportLink=$<HTMLAnchorElement>("work-export");exportLink.href="/api/work/export?month="+encodeURIComponent(report.month);exportLink.download="timesheet-"+report.month+".xlsx";
 }
 async function loadWork(){const m=workInput("work-month").value,req=++workRequest;if(!/^\d{4}-\d{2}$/.test(m))return;try{const report=await jsonRequest("/api/work/report?month="+encodeURIComponent(m));if(req!==workRequest)return;renderWork(report);text($("work-message"),"План — прогноз нагрузки; Δ не является юридическим расчётом сверхурочных.")}catch(err){if(req===workRequest)text($("work-message"),String(err))}}
