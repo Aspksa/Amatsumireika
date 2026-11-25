@@ -53,6 +53,8 @@ def run(path,ident):
             db.execute("UPDATE documents SET content=?,extract_status='indexed' WHERE id=?",(content,ident))
             db.execute("DELETE FROM document_terms WHERE document_id=?",(ident,))
             db.executemany("INSERT OR IGNORE INTO document_terms VALUES(?,?)",((t,ident) for t in memory.terms(name+" "+current["folder"]+" "+content) if len(t)<=80))
+            import document_intelligence
+            document_intelligence.index_document(db,ident)
             if job:db.execute("UPDATE document_jobs SET status='done',error='',updated=? WHERE document_id=?",(doc.now(),ident))
             doc.event(db,ident,"OCR Windows: "+str(result["pages"])+"/"+str(result["total"])+" стр.; текст требует проверки",current["node_id"])
         return {"indexed":True,"pages":result["pages"],"total":result["total"],"truncated":len(result["text"].strip())>doc.MAX_TEXT}
