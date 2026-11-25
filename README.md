@@ -79,3 +79,6 @@ Time composition redesign inspired by the supplied radial bar-chart reference: l
 
 ### Startup reliability and favicon
 Start.bat uses Python 3.10+, UTF-8, a named console and a standard-library launcher. It serializes build/start with an OS-released lock, checks frontend SHA-256, logs to data/startup.log (rotating), reopens a healthy existing instance and preserves SQLite. Node is required only for rebuilding. Start.bat --check / python launcher.py --check verify build and DB without opening the browser. Local health endpoint, Host validation, JSON errors and SVG favicon. Direct server.py remains a developer entry point.
+
+### Cloud.ru API settings
+Open Settings in the header. The only provider is Cloud.ru Foundation Models; fixed GET /v1/models, explicit manual request, no inference. Windows API keys use current-user DPAPI encrypted blobs in SQLite; Linux uses process memory only. A moved database may require re-entering the key on another Windows account or PC. Nonsecret model selection, cached catalog, last status and request counters are stored in SQLite. Token counters cover only this app (no generation, zero); not Cloud.ru account-wide usage. The chat stays local until inference and budget authorization are implemented. No API key is returned by the server. Tests use mocks, no paid calls.
