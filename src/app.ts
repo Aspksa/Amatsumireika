@@ -993,7 +993,8 @@ $("disk-upload").onchange=()=>void diskUploadFiles(Array.from($<HTMLInputElement
 
 type DiskGraphNode={id:number;node_id:number;name:string;folder:string;size:number;extract_status:string;degree:number;outside:number;cluster?:number;cluster_label?:string;cluster_method?:string};
 type DiskGraph={nodes:DiskGraphNode[];edges:{source:number;target:number}[];versions:{child:number;parent:number}[];next:number|null;total:number;revision:number};
-let diskMode:"list"|"tiles"|"gallery"|"graph"="tiles",diskFiles:DiskFile[]=[],diskFolders:string[]=[],diskSelection=new Set<number>(),diskGraphReq=0,diskGraphAfter=0,diskGraph:DiskGraph|null=null,diskZoom=1,diskGraphPos=new Map<number,{x:number;y:number;r:number}>(),diskGraphBorn=0,diskGraphAnimation=false,diskAnalyticsReq=0,diskPollBusy=false,diskAfter=0,diskRevision=-1,diskAskReq=0,diskNodeReq=0,diskPan={x:0,y:0},diskDrag:{x:number;y:number;px:number;py:number}|null=null,diskMoved=false;
+type DiskMode="list"|"tiles"|"gallery"|"graph";
+let diskMode:DiskMode="tiles",diskFiles:DiskFile[]=[],diskFolders:string[]=[],diskSelection=new Set<number>(),diskGraphReq=0,diskGraphAfter=0,diskGraph:DiskGraph|null=null,diskZoom=1,diskGraphPos=new Map<number,{x:number;y:number;r:number}>(),diskGraphBorn=0,diskGraphAnimation=false,diskAnalyticsReq=0,diskPollBusy=false,diskAfter=0,diskRevision=-1,diskAskReq=0,diskNodeReq=0,diskPan={x:0,y:0},diskDrag:{x:number;y:number;px:number;py:number}|null=null,diskMoved=false;
 const formatColors:Record<string,string>={pdf:"#d88d87",docx:"#89b7e0",xlsx:"#8ac7a7",csv:"#8ac7a7",png:"#c6a6e6",jpg:"#c6a6e6",jpeg:"#c6a6e6",gif:"#c6a6e6",webp:"#c6a6e6",md:"#d9bd82",txt:"#d9bd82",odt:"#89b7e0",ods:"#8ac7a7"};
 const diskExt=(name:string)=>name.split(".").pop()?.toLowerCase()??"";
 const diskTint=(name:string)=>formatColors[diskExt(name)]??"#c4b69b";
@@ -1024,7 +1025,7 @@ function diskRenderFiles(){
  }if(!diskFiles.length)text(list,"Нет документов");diskSelectedCount();
 }
 async function diskWorkspaceAction(data:object){if(diskBusy)return;diskBusy=true;try{const v=await jsonRequest("/api/workspace/action",data);text($("disk-message"),v.results?"Успешно: "+v.results.filter((x:{ok:boolean})=>x.ok).length+" из "+v.results.length:"Операция принята");diskClear();await diskLoad();await refreshAtlas();void diskAnalytics();if(diskMode==="graph")void diskGraphLoad(diskGraphAfter)}catch(err){text($("disk-message"),String(err))}finally{diskBusy=false}}
-type DiskLayout={mode:typeof diskMode;density:"comfortable"|"compact";opacity:number};
+type DiskLayout={mode:DiskMode;density:"comfortable"|"compact";opacity:number};
 let diskDensity:DiskLayout["density"]="comfortable",diskOpacity=100,diskLayoutRevision=0,diskLayoutSaves=Promise.resolve();
 function diskNormalizeLayout(raw:unknown):DiskLayout{
  const x=raw as Partial<DiskLayout>|null;
@@ -1037,7 +1038,7 @@ $("disk-density-mode").onchange=()=>{diskDensity=$<HTMLSelectElement>("disk-dens
 $("disk-panel-opacity").oninput=()=>{diskLayoutRevision++;diskOpacity=diskNormalizeLayout({opacity:Number($<HTMLInputElement>("disk-panel-opacity").value)}).opacity;diskApplyLayout()};
 $("disk-panel-opacity").onchange=diskSaveLayout;
 $("disk-layout-reset").onclick=()=>{diskDensity="comfortable";diskOpacity=100;diskApplyLayout();diskSetMode("tiles")};
-function diskSetMode(mode:typeof diskMode,save=true){diskMode=mode;$("disk-list").hidden=mode==="graph";$("disk-next").hidden=mode==="graph";$("disk-first").hidden=mode==="graph";$("disk-graph-pane").hidden=mode!=="graph";for(const m of ["list","tiles","gallery","graph"]){$("disk-mode-"+m).classList.toggle("active",m===mode);$("disk-mode-"+m).setAttribute("aria-pressed",String(m===mode))}diskSelectedCount();if(mode==="graph")void diskGraphLoad(0);else diskRenderFiles();if(save)diskSaveLayout()}
+function diskSetMode(mode:DiskMode,save=true){diskMode=mode;$("disk-list").hidden=mode==="graph";$("disk-next").hidden=mode==="graph";$("disk-first").hidden=mode==="graph";$("disk-graph-pane").hidden=mode!=="graph";for(const m of ["list","tiles","gallery","graph"]){$("disk-mode-"+m).classList.toggle("active",m===mode);$("disk-mode-"+m).setAttribute("aria-pressed",String(m===mode))}diskSelectedCount();if(mode==="graph")void diskGraphLoad(0);else diskRenderFiles();if(save)diskSaveLayout()}
 for(const mode of ["list","tiles","gallery","graph"] as const)$("disk-mode-"+mode).onclick=()=>diskSetMode(mode);
 $("disk-select-all").onclick=()=>{diskSelection=diskSelection.size===diskFiles.length?new Set<number>():new Set(diskFiles.map(f=>f.id));diskRenderFiles()};
 $("disk-batch-move").onclick=()=>{if(diskSelection.size){const folder=window.prompt("Папка назначения",$<HTMLSelectElement>("disk-folder").value);if(folder!==null)void diskWorkspaceAction({action:"batch",ids:Array.from(diskSelection),mode:"move",folder})}};
