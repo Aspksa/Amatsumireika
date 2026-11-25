@@ -43,5 +43,15 @@ folderPrefix="";grouping="category";mode="radial";rebuild();assert.equal(groupNa
 focusNode(100000);assert.ok(targets.has(100000),"Selected record outside initial sample remains accessible");
 assert.equal(cameraTarget.zoom,3);
 assert.ok(Number.isFinite(cameraTarget.pan.x));
+for(const y of [2026,2027]){const stats=productionStats(yearDates(y));assert.equal(stats.work,247);assert.equal(stats.rest,118);assert.equal(stats.short,4);assert.equal(stats.h40,1972);assert.equal(stats.h36,1774.4);assert.equal(stats.h24,1181.6)}
+assert.equal(productionDay(new Date(2026,0,9,12)),"transfer");
+assert.equal(productionDay(new Date(2027,1,20,12)),"short");
+assert.equal(productionDay(new Date(2027,1,22,12)),"transfer");
+assert.equal(productionDay(new Date(2027,10,5,12)),"transfer");
+assert.equal(productionDay(new Date(2028,0,1,12)),null);
+assert.equal(elapsedDays(2026,new Date(2026,11,31,12)),365);
+assert.equal(elapsedDays(2027,new Date(2027,0,1,0)),1);
+lastDay="2026-12-31";autoYear=false;calendarYear=2026;daySelected=lastDay;updateCalendarDate(new Date(2027,0,1,0));assert.equal(displayedYear(new Date(2027,0,1,0)),2027);assert.equal(daySelected,"2027-01-01");assert.equal(autoYear,true);
+console.log("Production calendar 2026/2027 and midnight rollover: OK");
 console.log("Atlas runtime geometry: 100000 records, 250 folders, 6 modes; OK");
 `,ctx,{timeout:30000});
