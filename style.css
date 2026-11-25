@@ -332,3 +332,6 @@ body.settings-open #layout{display:none}
 /* Small real previews without layout shifts. */
 .disk-mini{display:grid;place-items:center;width:100%;height:94px;overflow:hidden;border-radius:8px;background:rgba(128,128,128,.08);color:inherit;font-size:11px;line-height:1.3}
 .disk-mini canvas{max-width:100%;max-height:100%;object-fit:contain}.disk-mini pre{margin:0;padding:8px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:94px;overflow:hidden;text-align:left;font-size:9px;line-height:1.3;width:100%;box-sizing:border-box}.disk-history-rows{max-height:260px;overflow:auto;overflow-wrap:anywhere}
+
+/* Exact document evidence and version comparison. */
+#disk-insights blockquote{margin:6px 0;padding:8px 12px;border-inline-start:2px solid var(--accent);white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px}#disk-preview mark{background:#d6aa56;color:#17120b;padding:2px 0}.disk-version-diff{max-height:420px;overflow:auto}.disk-version-diff>div{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.disk-version-diff pre{padding:8px;white-space:pre-wrap;overflow-wrap:anywhere;margin:3px 0;font-size:11px;border-radius:5px}.diff-before{border:1px solid #aa5656;background:rgba(170,86,86,.12)}.diff-after{border:1px solid #469a72;background:rgba(70,154,114,.12)}@media(max-width:680px){.disk-version-diff>div{grid-template-columns:1fr}}
