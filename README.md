@@ -115,3 +115,5 @@ Atlas default transport now uses a bounded 10,000-node window (50,000 in-window 
 
 ### Document Intelligence 7.0
 Local files in data/Aspksa/Документы, opaque storage names, SQLite metadata, SHA-256, 20 MiB/file, folder management, deduplication, recoverable trash, links to existing atlas, text indexing/search, download with hash verification. TXT/MD/CSV/JSON/LOG and bounded DOCX/XLSX/ODT/ODS extraction via standard library; PDF/images are preserved and preview-only, no PDF text parser/OCR. No file text is automatically transmitted to Cloud.ru. Existing cloud context uses only explicitly confirmed record titles. No permanent deletion in this initial implementation.
+
+Disk page: upload, folders, text previews, browser PDF sandbox preview (download fallback), images, trash and restore, atlas navigation and manual linking. Explicitly labeled lines in a file can become review candidates only on a local user action; no automatic facts from arbitrary text. Trashed nodes are hidden from active graph/search, retained in SQLite for restoration. Distinct physical documents cannot be merged by filename.

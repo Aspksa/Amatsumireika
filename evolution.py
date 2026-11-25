@@ -47,7 +47,7 @@ def neighbors(db,ids,limit=24):
             if target in seen:continue
             seen.add(target)
             item=record(db,target)
-            if item:result.append({**item,"via":root})
+            if item and not (memory.table(db,"documents") and db.execute("SELECT 1 FROM documents WHERE node_id=? AND deleted IS NOT NULL",(target,)).fetchone()):result.append({**item,"via":root})
             if len(result)>=limit:return result
     return result
 current_state=memory.current_state

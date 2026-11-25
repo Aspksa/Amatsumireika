@@ -143,6 +143,8 @@ def upload(path,data):
                 node=db.execute("INSERT INTO nodes(title,category,folder,created_at) VALUES(?,?,?,?)",(name,"Документы",where,now())).lastrowid
                 ident=db.execute("INSERT INTO documents(node_id,name,folder,blob,sha256,size,created,extract_status,content) VALUES(?,?,?,?,?,?,?,?,?)",(node,name,where,blob,sha,len(raw),now(),status,content)).lastrowid
                 db.executemany("INSERT OR IGNORE INTO document_terms VALUES(?,?)",((w,ident) for w in memory.terms(name+" "+where+" "+content) if len(w)<=80))
+                import cognitive
+                db.execute("INSERT INTO cog_memory(node_id,kind,subject,fingerprint,source,at,confidence,priority) VALUES(?,?,?,?,?,?,?,?)",(node,"document","",sha,"document:"+str(ident),now(),1,2))
                 db.execute("INSERT INTO atlas_events(at,kind,detail) VALUES(?,?,?)",(now(),"node","Документ: "+name))
                 event(db,ident,"Документ загружен",node)
                 result=meta(get(db,ident))
@@ -200,6 +202,18 @@ def action(path,data):
             db.execute("UPDATE nodes SET folder=? WHERE id=?",(where,r["node_id"]))
             db.execute("DELETE FROM document_terms WHERE document_id=?",(r["id"],))
             db.executemany("INSERT OR IGNORE INTO document_terms VALUES(?,?)",((w,r["id"]) for w in memory.terms(r["name"]+" "+where+" "+r["content"]) if len(w)<=80))
+        elif kind=="candidates" and not r["deleted"]:
+            import cognitive
+            before=db.total_changes
+            count=0
+            for line in r["content"].splitlines()[:1000]:
+                match=re.fullmatch(r"\s*(факт|событие|навык|привычка|предпочтение|причина|цель|запомни)\s*[:：]\s*(.+)",line,re.I)
+                if match and count<20:
+                    k=cognitive.LABELS[match[1].casefold()];title=match[2].strip()
+                    if cognitive.safe(title):
+                        cognitive.proposal(db,k,title,"document:"+str(r["id"]),cognitive.subject_of(title,k),.5,1);count+=1
+            event(db,r["id"],"Кандидаты из документа проверены",r["node_id"])
+            return {"ok":True,"scanned":count}
         elif kind=="link" and not r["deleted"]:
             other=data.get("node")
             if type(other) is not int or other<=0 or other==r["node_id"]:raise ValueError("Укажите другую запись")
@@ -218,3 +232,8 @@ def health(path):
                 if not f.is_file() or f.stat().st_size!=r["size"]:missing.append(r["id"])
             except (OSError,ValueError):missing.append(r["id"])
         return {"files":len(rows),"missing":missing}
+
+def by_node(path,node):
+    with closing(connect(path)) as db:
+        row=db.execute("SELECT * FROM documents WHERE node_id=? AND deleted IS NULL",(node,)).fetchone()
+        return {"file":meta(row) if row else None}
