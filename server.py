@@ -28,6 +28,7 @@ def initialize():
         """)
         db.execute("CREATE TABLE IF NOT EXISTS ui_settings(id INTEGER PRIMARY KEY CHECK(id=1), payload TEXT NOT NULL)")
         db.execute("CREATE TABLE IF NOT EXISTS atlas_events(id INTEGER PRIMARY KEY, at TEXT NOT NULL, kind TEXT NOT NULL, detail TEXT NOT NULL)")
+        db.execute("CREATE TABLE IF NOT EXISTS chat_messages(id INTEGER PRIMARY KEY, role TEXT NOT NULL CHECK(role IN ('user','system')), content TEXT NOT NULL, created_at TEXT NOT NULL)")
         columns = {r[1] for r in db.execute("PRAGMA table_info(nodes)")}
         if "folder" not in columns:
             db.execute("ALTER TABLE nodes ADD COLUMN folder TEXT NOT NULL DEFAULT ''")
@@ -71,6 +72,34 @@ def save_settings(data):
 def get_events():
     with closing(connect()) as db:
         return [dict(at=a,kind=k,detail=d) for a,k,d in db.execute("SELECT at,kind,detail FROM atlas_events ORDER BY id DESC LIMIT 500")]
+
+def chat_history(db):
+    rows = db.execute("SELECT id,role,content,created_at FROM chat_messages ORDER BY id DESC LIMIT 200").fetchall()
+    return {"messages":[dict(id=i,role=r,content=c,created_at=a) for i,r,c,a in reversed(rows)],"model_connected":False}
+
+def get_chat():
+    with closing(connect()) as db:
+        return chat_history(db)
+
+def send_chat(content):
+    if not isinstance(content,str) or not content.strip() or len(content.strip())>3000:
+        raise ValueError("Сообщение должно содержать от 1 до 3000 символов")
+    content=content.strip()
+    with closing(connect()) as db, db:
+        def append(role,body):
+            db.execute("INSERT INTO chat_messages(role,content,created_at) VALUES(?,?,?)",
+                       (role,body,datetime.now(timezone.utc).isoformat()))
+        append("user",content)
+        command=content.casefold()
+        if command=="/помощь":
+            append("system","Локальные команды: /статус — состояние базы и количество записей и связей. Языковая модель не подключена.")
+        elif command=="/статус":
+            count=db.execute("SELECT COUNT(*) FROM nodes").fetchone()[0]
+            links=db.execute("SELECT COUNT(*) FROM edges").fetchone()[0]
+            append("system",f"SQLite работает. Записей: {count}; связей: {links}. Языковая модель не подключена.")
+        else:
+            append("system","Сообщение сохранено. Для ответа ИИ необходимо подключить языковую модель.")
+        return chat_history(db)
 
 def snapshot():
     with closing(connect()) as db:
@@ -118,6 +147,8 @@ class Handler(BaseHTTPRequestHandler):
         path=urlsplit(self.path).path
         if path=="/api/atlas":
             self.reply(200,snapshot())
+        elif path=="/api/chat":
+            self.reply(200,get_chat())
         elif path=="/api/settings":
             self.reply(200,get_settings())
         elif path=="/api/events":
@@ -142,6 +173,9 @@ class Handler(BaseHTTPRequestHandler):
             data=json.loads(self.rfile.read(n))
             if not isinstance(data,dict):
                 raise ValueError("Expected object")
+            if self.path=="/api/chat":
+                self.reply(200,send_chat(data.get("content")))
+                return
             if self.path=="/api/settings":
                 self.reply(200,save_settings(data))
                 return
