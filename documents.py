@@ -124,7 +124,8 @@ def upload(path,data):
     if ext==".gif" and raw[:6] not in (b"GIF87a",b"GIF89a"):raise ValueError("Не GIF")
     if ext==".webp" and not (raw[:4]==b"RIFF" and raw[8:12]==b"WEBP"):raise ValueError("Не WebP")
     sha=hashlib.sha256(raw).hexdigest()
-    status,content=extract(name,raw)
+    deferred=data.get("defer") is True
+    status,content=("queued","") if deferred else extract(name,raw)
     blob=uuid.uuid4().hex
     root(path).mkdir(parents=True,exist_ok=True)
     target=path_for(path,blob)
@@ -146,6 +147,9 @@ def upload(path,data):
                 import cognitive
                 db.execute("INSERT INTO cog_memory(node_id,kind,subject,fingerprint,source,at,confidence,priority) VALUES(?,?,?,?,?,?,?,?)",(node,"document","",sha,"document:"+str(ident),now(),1,2))
                 db.execute("INSERT INTO atlas_events(at,kind,detail) VALUES(?,?,?)",(now(),"node","Документ: "+name))
+                if deferred:
+                    import document_workspace
+                    document_workspace.enqueue(db,ident)
                 event(db,ident,"Документ загружен",node)
                 result=meta(get(db,ident))
                 db.commit()
@@ -159,7 +163,7 @@ def list_docs(path,q="",trash=False,where="",after=0):
     with closing(connect(path)) as db:
         query="SELECT id,node_id,name,folder,size,sha256,created,deleted,extract_status FROM documents d WHERE deleted IS "+("NOT NULL" if trash else "NULL")+" AND id>?"
         args=[after]
-        if where:query+=" AND folder=?";args.append(where)
+        if where:query+=" AND (folder=? OR substr(folder,1,length(?)+1)=?||\x27/\x27)";args.extend([where,where,where])
         terms=sorted(memory.terms(q))
         if terms:
             query+=" AND id IN (SELECT document_id FROM document_terms WHERE term IN ("+",".join("?" for _ in terms)+"))";args+=terms
@@ -204,6 +208,7 @@ def action(path,data):
             db.execute("DELETE FROM document_terms WHERE document_id=?",(r["id"],))
             db.executemany("INSERT OR IGNORE INTO document_terms VALUES(?,?)",((w,r["id"]) for w in memory.terms(r["name"]+" "+where+" "+r["content"]) if len(w)<=80))
         elif kind=="candidates" and not r["deleted"]:
+            if r["extract_status"]=="queued":raise ValueError("Дождитесь индексации")
             import cognitive
             count=0
             for line in r["content"].splitlines()[:1000]:
