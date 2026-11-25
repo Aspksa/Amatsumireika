@@ -90,3 +90,42 @@ main.expanded #controls h2{padding-top:8px;margin:12px 0 6px;font-size:9px}main.
 #controls input[type=range]::-moz-range-progress{background:var(--accent);height:5px}
 .group-nav{display:flex;justify-content:space-between;align-items:center;font:10px var(--mono)}#folder-path{overflow-wrap:anywhere;color:var(--muted);font:10px var(--mono);margin:6px 0}
 .matrix-label{grid-column:1/-1;font:9px var(--mono);color:var(--muted)}#tooltip{max-width:245px;overflow-wrap:anywhere}
+
+/* v0.7 — command center: clock + living core + edge-to-edge chat */
+main:not(.expanded){grid-template-columns:minmax(0,23fr) minmax(0,43fr) minmax(0,34fr);gap:0;padding:0}
+main:not(.expanded) #left{display:flex;flex-direction:column;padding:18px 16px;background:transparent;border:0;border-right:1px solid var(--line);border-radius:0}
+main:not(.expanded) #stage{border:0;border-radius:0;background:transparent}
+main:not(.expanded) #right{display:none}
+main.expanded #overview{display:block}
+main.expanded #chat-panel,body.presentation #chat-panel{display:none}
+.time-panel{text-align:center;padding:28px 0 25px}
+.clock-caption{font:9px var(--mono);letter-spacing:2px;color:var(--muted)}
+#clock{font:600 clamp(19px,3.45vw,48px) var(--mono);letter-spacing:-.055em;line-height:1.4;white-space:nowrap;color:var(--ink)}
+#clock-date{font-size:12px;color:var(--ink);margin-top:5px;text-transform:capitalize}
+#clock-zone{font:9px var(--mono);color:var(--muted);margin-top:8px;overflow-wrap:anywhere}
+.calendar-panel{border-top:1px solid var(--line);padding-top:18px}
+.calendar-panel #calendar{gap:4px}
+.calendar-panel #calendar button{aspect-ratio:1.1;padding:0;border-color:transparent;background:transparent;font-size:11px}
+.calendar-panel #calendar .day-with-events{border-color:var(--accent)}
+.calendar-panel #calendar .day-today{color:var(--accent);font-weight:700}
+.calendar-panel #calendar .day-selected{background:var(--accent);color:var(--bg)}
+.calendar-panel #calendar button:hover{border-color:var(--accent)}
+.today-button{display:block;margin:10px auto 20px;padding:6px 16px}
+#chat-panel{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;border-left:1px solid var(--line);background:transparent}
+.chat-heading{display:flex;align-items:center;gap:10px;padding:15px 16px 12px;border-bottom:1px solid var(--line);flex:none}
+.chat-heading strong{font-size:13px;letter-spacing:.4px}
+.chat-dot{width:7px;height:7px;border-radius:50%;background:var(--accent);flex:none}
+#chat-mode,.chat-hint,#chat-status{font:10px var(--mono);color:var(--muted);line-height:1.5;overflow-wrap:anywhere}
+#chat-log{flex:1;min-height:0;overflow:auto;padding:20px 16px;display:flex;flex-direction:column;gap:18px;scrollbar-width:thin}
+.chat-empty{color:var(--muted);font-size:12px;margin:auto;text-align:center}
+.chat-message{max-width:100%;overflow-wrap:anywhere;line-height:1.6;white-space:pre-wrap}
+.chat-message.user{align-self:flex-end;background:var(--surface);border-radius:12px 12px 3px 12px;padding:9px 12px;max-width:90%}
+.chat-message.system{align-self:flex-start;padding:2px 0}
+.chat-meta{font:9px var(--mono);color:var(--muted);margin-bottom:5px}
+.chat-bottom{flex:none;padding:10px 12px 12px}
+#chat-form{display:flex;align-items:flex-end;gap:8px;margin-top:7px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:7px}
+#chat-input{flex:1;min-width:0;max-height:150px;resize:vertical;border:0;background:transparent;color:var(--ink);font:13px/1.5 var(--sans);padding:7px;outline:none}
+#chat-input:focus-visible{outline:1px solid var(--accent);border-radius:5px}
+#chat-form button{width:36px;height:36px;flex:none;padding:0;border-radius:50%;background:var(--accent);color:var(--bg);font-size:19px;font-weight:700}
+.chat-hint{margin:6px 0 0;text-align:center;font-size:9px}
+@media(max-width:760px){main:not(.expanded){grid-template-columns:minmax(0,1fr)}main:not(.expanded) #stage{grid-row:1}main:not(.expanded) #left{grid-row:2;border-right:0;max-height:none}#chat-panel{grid-row:3;min-height:65dvh;height:75dvh;border-left:0;border-top:1px solid var(--line)}#clock{font-size:40px}.calendar-panel{max-width:340px;width:100%;align-self:center}.time-panel{padding:12px 0}}
