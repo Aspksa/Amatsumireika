@@ -45,6 +45,8 @@ def dpapi(data, decrypt=False):
 def connect(path):
     db = sqlite3.connect(path, timeout=5)
     db.row_factory = sqlite3.Row
+    db.execute("PRAGMA foreign_keys=ON")
+    if db.execute("SELECT 1 FROM sqlite_master WHERE name='cloud_config'").fetchone() and db.execute("SELECT 1 FROM sqlite_master WHERE name='cloud_secret'").fetchone(): return db
     db.execute("""CREATE TABLE IF NOT EXISTS cloud_config(id INTEGER PRIMARY KEY CHECK(id=1),
         model TEXT NOT NULL DEFAULT '', models TEXT NOT NULL DEFAULT '[]',
         status TEXT NOT NULL DEFAULT 'not_configured', checked TEXT,
@@ -86,6 +88,7 @@ def state(path):
 def save(path, data):
     if set(data) - {"api_key", "model"}:
         raise ValueError("Unknown settings")
+    if "api_key" in data and "model" in data: raise ValueError("Save key and model separately")
     with LOCK, closing(connect(path)) as db, db:
         if "api_key" in data:
             key = data["api_key"]
@@ -99,8 +102,10 @@ def save(path, data):
                 db.execute("INSERT INTO cloud_secret VALUES(1,?) ON CONFLICT(id) DO UPDATE SET protected=excluded.protected", (protected,))
                 SESSION.pop(str(path), None)
             else:
-                SESSION[str(path)] = key
+                db.execute("DELETE FROM cloud_secret WHERE id=1")
             db.execute("UPDATE cloud_config SET models='[]',model='',status='configured',checked=NULL WHERE id=1")
+            db.commit()
+            if os.name != "nt": SESSION[str(path)] = key
         if "model" in data:
             model = data["model"]
             models = json.loads(db.execute("SELECT models FROM cloud_config WHERE id=1").fetchone()[0])

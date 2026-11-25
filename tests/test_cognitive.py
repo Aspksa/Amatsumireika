@@ -33,7 +33,9 @@ class CognitiveTest(unittest.TestCase):
         self.assertEqual(len(server.snapshot()["nodes"]),2)
     def test_local_worker_pause_and_recall(self):
         a=server.add_node("Ремонт автомобиля","Знания")
-        b=server.add_node("Ремонт автомобиля","Знания")
+        self.assertEqual(server.add_node("РЕМОНТ  автомобиля","Знания"),a)
+        with closing(server.connect()) as db, db:
+            b=db.execute("INSERT INTO nodes(title,category) VALUES(?,?)",("Ремонт автомобиля","Знания")).lastrowid
         cognitive.cycle(self.path,True)
         v=cognitive.dashboard(self.path)
         self.assertEqual(v["counts"]["fact"],2)
@@ -46,3 +48,17 @@ class CognitiveTest(unittest.TestCase):
         self.assertIn("Деловой",cognitive.system_profile(self.path,"как сделать"))
         self.assertEqual(cognitive.plan("исправь баг")["intent"],"repair")
         self.assertFalse(cognitive.plan("исправь баг")["executed"])
+
+    def test_duplicate_group_and_causal_cycle(self):
+        a=server.add_node("Запись","Знания")
+        with closing(server.connect()) as db, db:
+            b=db.execute("INSERT INTO nodes(title,category) VALUES('ЗАПИСЬ','Знания')").lastrowid
+        c=server.add_node("Другая","Знания")
+        cognitive.cycle(self.path,True)
+        cognitive.relation(self.path,{"source":a,"target":b,"kind":"duplicate","action":"approve"})
+        self.assertEqual(len(cognitive.lookup(self.path,"запись")["results"]),1)
+        self.assertEqual(len(server.snapshot()["nodes"]),3)
+        cognitive.relation(self.path,{"source":a,"target":b,"kind":"cause","action":"approve"})
+        cognitive.relation(self.path,{"source":b,"target":c,"kind":"cause","action":"approve"})
+        with self.assertRaises(ValueError): cognitive.relation(self.path,{"source":c,"target":a,"kind":"cause","action":"approve"})
+        self.assertEqual(len(server.snapshot()["causes"]),2)

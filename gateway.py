@@ -12,6 +12,7 @@ from urllib.request import Request, build_opener
 from urllib.error import HTTPError, URLError
 import cloud_api
 import cognitive
+import memory_engine as memory
 from pathlib import Path
 import budget
 
@@ -32,6 +33,7 @@ def now():
 
 def db_open(path):
     db=cloud_api.connect(path)
+    if memory.table(db,"embedding_cache") and memory.table(db,"cloud_jobs"): return db
     db.executescript("""
     CREATE TABLE IF NOT EXISTS cloud_jobs(
       id TEXT PRIMARY KEY, model TEXT NOT NULL, mode TEXT NOT NULL, status TEXT NOT NULL,
@@ -46,7 +48,9 @@ def db_open(path):
 
 def recover(path):
     with closing(db_open(path)) as db, db:
+        running=db.execute("SELECT COUNT(*) FROM cloud_jobs WHERE status='running'").fetchone()[0]
         db.execute("UPDATE cloud_jobs SET status='interrupted',error='Server stopped; no automatic retry',finished=? WHERE status IN ('queued','running')",(now(),))
+        if running: db.execute("UPDATE cloud_config SET failures=failures+? WHERE id=1",(running,))
 
 def status(path, ident):
     with closing(db_open(path)) as db:
@@ -60,45 +64,15 @@ def history(path):
         groups=db.execute("SELECT model,COUNT(*) requests,SUM(status='done') successes,SUM(COALESCE(input_tokens,0)) input_tokens,SUM(COALESCE(output_tokens,0)) output_tokens,SUM(input_tokens IS NULL OR output_tokens IS NULL) unknown_usage,CAST(AVG(latency_ms) AS INTEGER) latency_ms FROM cloud_jobs GROUP BY model ORDER BY model").fetchall()
         return {"jobs":[dict(r) for r in rows],"models":[dict(r) for r in groups]}
 
-def words(text):
-    return set(re.findall(r"\w{2,}",text.casefold()))
-
-def digest(text):
-    return hashlib.sha256(text.encode()).hexdigest()
-
-def vector(value):
-    if not isinstance(value,list) or not 1<=len(value)<=8192 or any(type(x) not in (int,float) or not math.isfinite(x) or abs(x)>1e6 for x in value):
-        raise ValueError("Invalid vector")
-    if not any(value): raise ValueError("Zero vector")
-    return value
-
+words=memory.terms
+digest=memory.digest
+vector=memory.vector
+cosine=memory.cosine
 def cache_vector(db,model,text,value):
     db.execute("INSERT OR REPLACE INTO embedding_cache VALUES(?,?,?)",(model,digest(text),json.dumps(vector(value))))
-
-def cosine(a,b):
-    if len(a)!=len(b): return 0
-    return sum(x*y for x,y in zip(a,b))/(math.sqrt(sum(x*x for x in a))*math.sqrt(sum(y*y for y in b)))
-
 def search(path,query,model=None):
-    """Text search always works offline; vector score only with matching cached vectors."""
     with closing(db_open(path)) as db:
-        q=words(query)
-        qrow=db.execute("SELECT vector FROM embedding_cache WHERE model=? AND digest=?",(model,digest(query))).fetchone() if model else None
-        qvec=vector(json.loads(qrow[0])) if qrow else None
-        rows=db.execute("SELECT id,title,category,folder FROM nodes ORDER BY id DESC LIMIT 20000").fetchall()
-        scored=[]
-        for row in rows:
-            text=row["title"]
-            terms=words(text+" "+row["category"]+" "+row["folder"])
-            lexical=len(q&terms)/max(1,len(q))
-            semantic=0
-            if qvec:
-                hit=db.execute("SELECT vector FROM embedding_cache WHERE model=? AND digest=?",(model,digest(text))).fetchone()
-                if hit: semantic=max(0,cosine(qvec,vector(json.loads(hit[0]))))
-            score=lexical+semantic
-            if score>0: scored.append((score,dict(row)))
-        scored.sort(key=lambda x:-x[0])
-        return [r for _,r in scored[:8]]
+        return memory.search(db,query,model)
 
 def submit(path,data):
     if data.get("confirm") is not True:
@@ -237,7 +211,7 @@ def run_job(path,ident,key,model,prompt,mode):
             with closing(db_open(path)) as db, db:
                 db.execute("UPDATE cloud_jobs SET status=?,finished=?,answer=?,error=?,input_tokens=?,output_tokens=?,latency_ms=?,tool_result=? WHERE id=?",(outcome,now(),answer,error,*usage,round((time.monotonic()-start)*1000),tool_result,ident))
                 budget.settle(db,ident,*usage)
-                db.execute("UPDATE cloud_config SET successes=successes+?,failures=failures+?,input_tokens=input_tokens+?,output_tokens=output_tokens+? WHERE id=1",(int(outcome=="done"),int(outcome!="done"),usage[0] or 0,usage[1] or 0))
+                db.execute("UPDATE cloud_config SET successes=successes+?,failures=failures+?,input_tokens=input_tokens+?,output_tokens=output_tokens+?,status=? WHERE id=1",(int(outcome=="done"),int(outcome!="done"),usage[0] or 0,usage[1] or 0,"connected" if outcome=="done" else error))
         finally:
             ACTIVE.release()
 
