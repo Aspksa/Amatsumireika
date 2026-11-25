@@ -20,3 +20,6 @@ jobs:
       - run: npm run build
       - run: node tests/atlas_runtime.cjs
       - run: python -m unittest discover -s tests -v
+      - name: Real browser calendar smoke
+        if: runner.os == 'Linux'
+        run: node tests/chronograph_browser.cjs
