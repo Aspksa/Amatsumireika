@@ -1,5 +1,6 @@
 """Local-only atlas API and static frontend; no third-party Python packages."""
 import argparse
+import cloud_api
 import logging
 import secrets
 import math
@@ -473,6 +474,8 @@ class Handler(BaseHTTPRequestHandler):
         path=urlsplit(self.path).path
         if path=="/api/health":
             self.reply(200,{"app":"Amatsumireika","instance":self.server.instance,"ready":True})
+        elif path=="/api/cloud/settings":
+            self.reply(200,cloud_api.state(DB))
         elif path=="/api/atlas":
             self.reply(200,snapshot())
         elif path=="/api/calendar":
@@ -521,6 +524,14 @@ class Handler(BaseHTTPRequestHandler):
             data=json.loads(self.rfile.read(n))
             if not isinstance(data,dict):
                 raise ValueError("Expected object")
+            if self.path=="/api/cloud/settings":
+                self.reply(200,cloud_api.save(DB,data))
+                return
+            if self.path=="/api/cloud/models":
+                if data != {"confirm": True}:
+                    raise ValueError("Explicit catalog request required")
+                self.reply(200,cloud_api.refresh(DB))
+                return
             if self.path=="/api/calendar/refresh":
                 self.reply(200,refresh_calendars())
                 return

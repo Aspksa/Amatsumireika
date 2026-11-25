@@ -234,7 +234,7 @@ function reset(){geometryKey="";cameraTarget=null;zoom=1;pan={x:0,y:0};$<HTMLInp
 $("reset").onclick=reset;
 function layout(isExpanded:boolean){if(expanded===isExpanded)return;if(expanded)atlasMode=mode;expanded=isExpanded;revealAt=performance.now();$("atlas-loading").hidden=!expanded||reduced;groupHover=-1;$("module-tip").hidden=true;$("layout").classList.toggle("expanded",expanded);$("home").classList.toggle("active",!expanded);$("atlas").classList.toggle("active",expanded);text($("subtitle"),expanded?"Детальная карта памяти":"КОМАНДНЫЙ ЦЕНТР · ЖИВОЕ ЯДРО");text($("brand-mode"),expanded?"Атлас памяти":"Командный центр");mode=expanded?atlasMode:"radial";document.querySelectorAll<HTMLElement>("[data-mode]").forEach(x=>x.classList.toggle("active",x.dataset.mode===mode));resize();reset();positions.forEach(p=>{p.x*=.12;p.y*=.12});const el=$("layout");el.classList.remove("reveal");void el.offsetWidth;el.classList.add("reveal");text($("legend"),expanded?"Колесо — масштаб · Перетаскивание — перемещение · Двойной щелчок — фокус":"Нажмите на ядро, чтобы открыть полный атлас");if(!expanded){chooseCalendarYear(null);wakeCinema()}}
 $("core-open").onclick=()=>layout(true);
-$("home").onclick=()=>layout(false);$("atlas").onclick=()=>layout(true);
+$("home").onclick=()=>{closeProjectSettings();layout(false)};$("atlas").onclick=()=>{closeProjectSettings();layout(true)};
 document.querySelectorAll<HTMLButtonElement>("[data-mode]").forEach(b=>b.onclick=()=>{const keep=selected;mode=b.dataset.mode as Layout;atlasMode=mode;document.querySelectorAll("[data-mode]").forEach(x=>x.classList.toggle("active",x===b));cameraTarget=null;zoom=1;pan={x:0,y:0};$<HTMLInputElement>("zoom").value="1";groupHover=-1;if(keep!==null&&nodeGroups.has(keep))focusNode(keep);else rebuild();refreshCounts()});
 document.querySelectorAll<HTMLButtonElement>("[data-group]").forEach(b=>b.onclick=()=>{grouping=b.dataset.group==="folder"?"folder":"category";folderPrefix="";groupPage=0;document.querySelectorAll("[data-group]").forEach(x=>x.classList.toggle("active",x===b));filter=null;activeGroup=null;selected=null;rebuild();refreshPanels()});
 $("expand-groups").onclick=()=>{groupNames.forEach((_,i)=>collapsed.delete(groupKey(i)));rebuild();refreshCounts()};
@@ -421,7 +421,7 @@ function cinemaDraw(c:CanvasRenderingContext2D,now:number,d:Date,dt:number,budge
  const pulse=(now-Math.max(cinemaBirthAt,cinemaMonthAt,cinemaYearAt,cinemaRevealAt,timePulse))/1000;
  if(pulse>=0&&pulse<1)cinemaGlow(c,target.x,target.y,8+12*eased(pulse),gold,(1-pulse)*power);
 }
-function cinemaOnscreen(){return cinemaVisible&&!expanded&&!presentation&&document.visibilityState!=="hidden"}
+function cinemaOnscreen(){return cinemaVisible&&!expanded&&!presentation&&!document.body.classList.contains("settings-open")&&document.visibilityState!=="hidden"}
 function wakeCinema(){if(!cinemaPending&&timeOverlayCtx&&cinemaOnscreen()){cinemaPending=true;requestAnimationFrame(overlayFrame)}}
 function overlayFrame(now:number){
  cinemaPending=false;if(!timeOverlay||!timeOverlayCtx||!cinemaOnscreen())return;
@@ -799,3 +799,26 @@ $<HTMLFormElement>("work-profile-form").onsubmit=e=>{e.preventDefault();void wor
 $<HTMLFormElement>("work-day-form").onsubmit=e=>{e.preventDefault();void workWrite("/api/work/day",{profile_id:Number(workSelect("work-person").value),day:workInput("work-day").value,planned:workNumber("work-planned"),actual:workNumber("work-actual"),status:workSelect("work-status").value})};
 document.documentElement.setAttribute("data-app-ready","1");
 fetch("/api/atlas").then(r=>{if(!r.ok)throw new Error("API "+r.status);return r.json()}).then(s=>{setState(s);if(timeDataReady){timeWindowKey="";void refreshTimeWindow()}}).catch(err=>{setState({nodes:[],edges:[],categories:state.categories});text($("status"),"API недоступен · демо");text($("message"),String(err))});
+
+type CloudState={key_present:boolean;storage:string;model:string;models:string[];status:string;checked:string|null;requests:number;successes:number;failures:number;input_tokens:number;output_tokens:number;generation_requests:number};
+let cloudState:CloudState|null=null,cloudBusy=false;
+const cloudKey=$<HTMLInputElement>("cloud-key"),cloudModel=$<HTMLSelectElement>("cloud-model");
+function renderCloud(v:CloudState){
+ cloudState=v;
+ const statuses:Record<string,string>={not_configured:"Ключ не задан",configured:"Ключ сохранён · не проверено",connected:"Каталог успешно получен",unauthorized:"Ключ отклонён",rate_limited:"Лимит запросов",http_error:"Ошибка Cloud.ru",network_error:"Нет связи",invalid_response:"Некорректный ответ",key_locked:"Ключ недоступен на этом ПК"};
+ text($("cloud-indicator"),statuses[v.status]??"Не проверено");$("cloud-indicator").setAttribute("data-connected",String(v.status==="connected"));
+ text($("cloud-storage"),v.storage==="windows_dpapi"?"Защита Windows":v.storage==="session"?"Только текущий сеанс":v.storage==="locked"?"Введите ключ заново":"Ключ не сохранён");
+ cloudKey.placeholder=v.key_present?"Ключ сохранён · введите новый для замены":"Введите API-ключ";
+ cloudModel.replaceChildren();const placeholder=document.createElement("option");placeholder.value="";text(placeholder,"Выберите основную модель");cloudModel.append(placeholder);
+ for(const model of v.models){const option=document.createElement("option");option.value=model;text(option,model);cloudModel.append(option)}cloudModel.value=v.model;
+ for(const [id,value] of [["cloud-requests",v.requests],["cloud-successes",v.successes],["cloud-failures",v.failures],["cloud-input-tokens",v.input_tokens],["cloud-output-tokens",v.output_tokens],["cloud-generations",v.generation_requests]] as [string,number][]){text($(id),String(value))}
+ text($("cloud-checked"),v.checked?"Последний запрос: "+new Date(v.checked).toLocaleString("ru-RU"):"Запросы каталога ещё не выполнялись");syncCloud();
+}
+function syncCloud(){$<HTMLButtonElement>("cloud-refresh").disabled=cloudBusy||!cloudState?.key_present;$<HTMLButtonElement>("cloud-save-key").disabled=cloudBusy;cloudModel.disabled=cloudBusy||!cloudState?.models.length||!cloudState.key_present;cloudKey.disabled=cloudBusy}
+async function cloudAction(url:string,data?:unknown){if(cloudBusy)return;cloudBusy=true;syncCloud();text($("cloud-message"),"Загрузка…");try{const v=await jsonRequest(url,data);renderCloud(v);text($("cloud-message"),data===undefined?"":url.endsWith("/models")?"Результат запроса указан в статусе.":"Настройки сохранены.")}catch(err){text($("cloud-message"),String(err));if(cloudState)renderCloud(cloudState)}finally{cloudBusy=false;syncCloud()}}
+function closeProjectSettings(){if(!document.body.classList.contains("settings-open"))return;document.body.classList.remove("settings-open");$("project-settings-page").hidden=true;$("project-settings").setAttribute("aria-pressed","false");cloudKey.value="";resize();wakeCinema()}
+$("project-settings").onclick=()=>{if(document.body.classList.contains("settings-open")){closeProjectSettings();return}document.body.classList.add("settings-open");$("project-settings-page").hidden=false;$("project-settings").setAttribute("aria-pressed","true");void cloudAction("/api/cloud/settings")};
+$("settings-back").onclick=closeProjectSettings;
+$("cloud-key-form").addEventListener("submit",e=>{e.preventDefault();const key=cloudKey.value.trim();cloudKey.value="";if(key)void cloudAction("/api/cloud/settings",{api_key:key})});
+$("cloud-refresh").onclick=()=>void cloudAction("/api/cloud/models",{confirm:true});
+cloudModel.onchange=()=>{if(cloudModel.value)void cloudAction("/api/cloud/settings",{model:cloudModel.value})};
