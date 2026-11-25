@@ -31,6 +31,9 @@ def initialize():
         columns = {r[1] for r in db.execute("PRAGMA table_info(nodes)")}
         if "folder" not in columns:
             db.execute("ALTER TABLE nodes ADD COLUMN folder TEXT NOT NULL DEFAULT ''")
+        if "created_at" not in columns:
+            db.execute("ALTER TABLE nodes ADD COLUMN created_at TEXT")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_nodes_folder ON nodes(folder)")
 
 def event(db, kind, detail):
     db.execute("INSERT INTO atlas_events(at,kind,detail) VALUES(?,?,?)",
@@ -72,7 +75,7 @@ def get_events():
 def snapshot():
     with closing(connect()) as db:
         db.execute("BEGIN")
-        return {"nodes":[dict(id=i,title=t,category=c,folder=f) for i,t,c,f in db.execute("SELECT id,title,category,folder FROM nodes ORDER BY id")],
+        return {"nodes":[dict(id=i,title=t,category=c,folder=f,created_at=at) for i,t,c,f,at in db.execute("SELECT id,title,category,folder,created_at FROM nodes ORDER BY id")],
                 "edges":[dict(source=s,target=t) for s,t in db.execute("SELECT source,target FROM edges ORDER BY source,target")],
                 "categories":CATEGORIES}
 
@@ -85,7 +88,7 @@ def add_node(title, category, folder=""):
     if any(p in (".","..") for p in folder.split("/")):
         raise ValueError("Invalid folder path")
     with closing(connect()) as db, db:
-        node_id = db.execute("INSERT INTO nodes(title,category,folder) VALUES(?,?,?)",(title.strip(),category,folder)).lastrowid
+        node_id = db.execute("INSERT INTO nodes(title,category,folder,created_at) VALUES(?,?,?,?)",(title.strip(),category,folder,datetime.now(timezone.utc).isoformat())).lastrowid
         event(db,"node",title.strip())
         return node_id
 
