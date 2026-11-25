@@ -23,3 +23,10 @@ jobs:
       - name: Real browser calendar smoke
         if: runner.os == 'Linux'
         run: node tests/chronograph_browser.cjs
+      - name: Real Windows BAT startup check
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: Start.bat --check
+      - name: Portable startup check (Linux)
+        if: runner.os == 'Linux'
+        run: python launcher.py --check

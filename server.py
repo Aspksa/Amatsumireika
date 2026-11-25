@@ -1,5 +1,7 @@
 """Local-only atlas API and static frontend; no third-party Python packages."""
 import argparse
+import logging
+import secrets
 import math
 from datetime import datetime, timezone, date, timedelta
 import json
@@ -405,7 +407,7 @@ def add_edge(source,target):
         if result.rowcount:
             event(db,"edge",f"Связь {source} ↔ {target}")
 
-STATIC = {"/":("index.html","text/html; charset=utf-8"),"/style.css":("style.css","text/css; charset=utf-8"),"/dist/app.js":("dist/app.js","text/javascript; charset=utf-8"),
+STATIC = {"/favicon.svg":("favicon.svg","image/svg+xml"),"/":("index.html","text/html; charset=utf-8"),"/style.css":("style.css","text/css; charset=utf-8"),"/dist/app.js":("dist/app.js","text/javascript; charset=utf-8"),
     "/fonts/source-serif.woff2":("fonts/source-serif.woff2","font/woff2"),
     "/fonts/inter.ttf":("fonts/inter.ttf","font/ttf"),
     "/fonts/manrope.ttf":("fonts/manrope.ttf","font/ttf"),
@@ -413,7 +415,28 @@ STATIC = {"/":("index.html","text/html; charset=utf-8"),"/style.css":("style.css
     "/fonts/jetbrains-mono.ttf":("fonts/jetbrains-mono.ttf","font/ttf")
 }
 
+class LocalServer(ThreadingHTTPServer):
+    daemon_threads = True
+    def __init__(self, address, handler):
+        self.instance = secrets.token_hex(16)
+        super().__init__(address, handler)
+
 class Handler(BaseHTTPRequestHandler):
+    def setup(self):
+        super().setup()
+        self.connection.settimeout(20)
+
+    def log_message(self, fmt, *args):
+        logging.getLogger("http").info("%s %s", self.address_string(), fmt % args)
+
+    def local_host(self):
+        host = self.headers.get("Host", "").lower()
+        port = self.server.server_port
+        return host in {"127.0.0.1", "localhost", f"127.0.0.1:{port}", f"localhost:{port}"}
+
+    def do_HEAD(self):
+        self.do_GET()
+
     def reply(self,status,body,mime="application/json; charset=utf-8"):
         if not isinstance(body,bytes):
             body=json.dumps(body,ensure_ascii=False).encode()
@@ -423,11 +446,34 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("X-Content-Type-Options","nosniff")
         self.send_header("Cache-Control","no-store")
         self.end_headers()
-        self.wfile.write(body)
+        if self.command != "HEAD":
+            try:
+                self.wfile.write(body)
+            except (BrokenPipeError, ConnectionResetError, TimeoutError):
+                self.close_connection = True
 
     def do_GET(self):
+        if not self.local_host():
+            self.reply(403, {"error": "Local host only"})
+            return
+        try:
+            self.get_resource()
+        except (BrokenPipeError, ConnectionResetError, TimeoutError):
+            self.close_connection = True
+        except sqlite3.Error:
+            logging.exception("GET database error")
+            self.reply(503, {"error": "Database unavailable"})
+        except (ValueError, TypeError):
+            self.reply(400, {"error": "Invalid parameters"})
+        except Exception:
+            logging.exception("GET failure")
+            self.reply(500, {"error": "Internal server error"})
+
+    def get_resource(self):
         path=urlsplit(self.path).path
-        if path=="/api/atlas":
+        if path=="/api/health":
+            self.reply(200,{"app":"Amatsumireika","instance":self.server.instance,"ready":True})
+        elif path=="/api/atlas":
             self.reply(200,snapshot())
         elif path=="/api/calendar":
             self.reply(200,get_calendars())
@@ -464,12 +510,13 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(404,{"error":"Not found"})
 
     def do_POST(self):
-        if self.headers.get("Origin") not in (None,"http://"+self.headers.get("Host","")) or self.headers.get_content_type()!="application/json":
+        if not self.local_host() or self.headers.get("Origin") not in (None,"http://"+self.headers.get("Host","")) or self.headers.get_content_type()!="application/json":
             self.reply(403,{"error":"Local JSON requests only"})
             return
         try:
             n=int(self.headers.get("Content-Length","0"))
             if not 0<n<=16384:
+                self.close_connection = True
                 raise ValueError("Invalid request length")
             data=json.loads(self.rfile.read(n))
             if not isinstance(data,dict):
@@ -503,7 +550,13 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError,TypeError,sqlite3.IntegrityError) as exc:
             self.reply(400,{"error":str(exc)})
         except sqlite3.Error:
+            logging.exception("POST database error")
             self.reply(503,{"error":"Database unavailable"})
+        except (BrokenPipeError, ConnectionResetError, TimeoutError):
+            self.close_connection = True
+        except Exception:
+            logging.exception("POST failure")
+            self.reply(500,{"error":"Internal server error"})
 
 def main():
     parser=argparse.ArgumentParser()
@@ -512,11 +565,16 @@ def main():
     args=parser.parse_args()
     initialize()
     load_bundled_calendars()
-    with ThreadingHTTPServer(("127.0.0.1",args.port),Handler) as server:
+    logging.basicConfig(level=logging.INFO,format="%(levelname)s %(message)s")
+    with LocalServer(("127.0.0.1",args.port),Handler) as server:
         url=f"http://127.0.0.1:{server.server_port}"
         print(url,flush=True)
         if args.open:
-            webbrowser.open(url)
+            try:
+                if not webbrowser.open(url):
+                    print("Open the URL manually.",flush=True)
+            except Exception:
+                logging.exception("Browser launch failed; server remains available")
         try:
             server.serve_forever()
         except KeyboardInterrupt:

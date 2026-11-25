@@ -1,28 +1,32 @@
 @echo off
 setlocal DisableDelayedExpansion
-cd /d "%~dp0" || exit /b 1
-where python >nul 2>&1
-if errorlevel 1 goto missing
-python frontend_build.py
-if not errorlevel 1 goto run
-echo Frontend is missing, outdated or damaged. Rebuilding...
-where npm.cmd >nul 2>&1
-if errorlevel 1 goto missing
-if exist node_modules\typescript\bin\tsc goto build
-call npm.cmd install --no-audit --no-fund
-if errorlevel 1 goto failed
-:build
-call npm.cmd run build
-if errorlevel 1 goto failed
-python frontend_build.py --seal
-if errorlevel 1 goto failed
-:run
-python server.py --open
-if errorlevel 1 goto failed
-exit /b 0
-:missing
-echo Python 3 and Node.js/npm are required to rebuild this version.
+title Amatsumireika - Local server
+chcp 65001 >nul
+set "PYTHONUTF8=1"
+set "PYTHONUNBUFFERED=1"
+pushd "%~dp0" || goto failed
+echo.
+echo  AMATSUMIREIKA / LOCAL SYSTEM
+echo  ---------------------------
+py -3 -c "import sys;sys.exit(sys.version_info < (3,10))" >nul 2>&1
+if not errorlevel 1 goto use_py
+python -c "import sys;sys.exit(sys.version_info < (3,10))" >nul 2>&1
+if not errorlevel 1 goto use_python
+echo [ERROR] Python 3.10 or newer is required.
+popd
+goto failed
+:use_py
+py -3 -u launcher.py %*
+goto result
+:use_python
+python -u launcher.py %*
+:result
+set "EXITCODE=%ERRORLEVEL%"
+popd
+if "%EXITCODE%"=="0" exit /b 0
 :failed
-echo Startup failed. Check the messages above. Your database was not deleted.
+echo [ERROR] Startup failed. See data\startup.log if available.
+echo Your SQLite database was not deleted.
+if /i "%~1"=="--check" exit /b 1
 pause
 exit /b 1
