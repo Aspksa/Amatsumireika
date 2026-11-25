@@ -2,6 +2,7 @@
 import argparse
 import cloud_api
 import gateway
+import budget
 import logging
 import secrets
 import math
@@ -487,6 +488,8 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(200,{"app":"Amatsumireika","instance":self.server.instance,"ready":True})
         elif path=="/api/cloud/settings":
             self.reply(200,cloud_api.state(DB))
+        elif path=="/api/cloud/budget":
+            self.reply(200,budget.state(DB))
         elif path=="/api/cloud/history":
             self.reply(200,gateway.history(DB))
         elif path=="/api/cloud/job":
@@ -541,6 +544,9 @@ class Handler(BaseHTTPRequestHandler):
             data=json.loads(self.rfile.read(n))
             if not isinstance(data,dict):
                 raise ValueError("Expected object")
+            if self.path=="/api/cloud/budget":
+                self.reply(200,budget.save(DB,data))
+                return
             if self.path=="/api/cloud/generate":
                 self.reply(202,gateway.submit(DB,data))
                 return

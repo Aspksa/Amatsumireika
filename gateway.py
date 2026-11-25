@@ -11,25 +11,19 @@ from threading import Lock, Thread
 from urllib.request import Request, build_opener
 from urllib.error import HTTPError, URLError
 import cloud_api
+from pathlib import Path
+import budget
 
 BASE = "https://foundation-models.api.cloud.ru/v1"
 ACTIVE = Lock()
 TOKEN_LIMIT = 1024
-# Capability labels are hints unless explicitly documented; unknown models are not assumed to support tools.
-KNOWN = {
-    "deepseek-ai/DeepSeek-V3.1-Terminus": ("LLM", ["tools","json","reasoning"]),
-    "Qwen/Qwen3-Embedding-0.6B": ("Embedding", []),
-    "openai/gpt-5.5": ("LLM", ["tools","json"]),
-    "openai/gpt-5.4-nano": ("LLM", ["tools","json"]),
-    "openai/gpt-oss-20b": ("LLM", ["tools","json"]),
-    "qwen/qwen3-max-thinking": ("LLM", ["tools","json","reasoning"]),
-}
+# Source: official Cloud.ru model overview; unknown IDs remain unknown.
+KNOWN=json.loads(Path(__file__).with_name("cloud_catalog.json").read_text(encoding="utf-8"))
 def classify(model):
     if model in KNOWN:
-        kind, caps = KNOWN[model]
-        return {"id":model,"kind":kind,"capabilities":caps,"source":"documented"}
+        return {"id":model,**KNOWN[model],"source":"documented"}
     name=model.lower()
-    kind="Embedding" if "embed" in name or "bge-m3" in name else "Reranker" if "rerank" in name else "Other" if any(x in name for x in ("whisper","tts","speech","image","diffusion")) else "Unknown"
+    kind="Reranker" if "rerank" in name else "Embedding" if "embed" in name else "Unknown"
     return {"id":model,"kind":kind,"capabilities":[],"source":"name_hint"}
 
 def now():
@@ -111,7 +105,7 @@ def submit(path,data):
     ident, prompt, mode=data.get("id"),data.get("content"),data.get("mode","chat")
     if not isinstance(ident,str) or not re.fullmatch(r"[a-f0-9-]{32,36}",ident):
         raise ValueError("Invalid request ID")
-    if not isinstance(prompt,str) or not 1<=len(prompt.strip())<=3000 or mode not in ("chat","json","tools"):
+    if not isinstance(prompt,str) or not 1<=len(prompt.strip())<=3000 or mode not in ("chat","json","tools","reasoning"):
         raise ValueError("Invalid request")
     prompt=prompt.strip()
     fingerprint=digest(mode+"\0"+prompt)
@@ -130,7 +124,7 @@ def submit(path,data):
             if not key or not model:
                 raise ValueError("Configure API key and model first")
             caps=classify(model)
-            if caps["kind"] in ("Embedding","Reranker","Other"):
+            if caps["kind"] not in ("LLM","Unknown"):
                 raise ValueError("Select a chat model")
             if mode!="chat" and mode not in caps["capabilities"]:
                 raise ValueError("Model capability is not confirmed")
@@ -143,6 +137,7 @@ def submit(path,data):
                 ACTIVE.release()
                 return result
             with db:
+                budget.reserve(db,ident,model,65536,TOKEN_LIMIT)
                 db.execute("INSERT INTO cloud_jobs(id,model,mode,status,created,prompt,fingerprint) VALUES(?,?,?,?,?,?,?)",(ident,model,mode,"queued",now(),prompt,fingerprint))
         Thread(target=run_job,args=(path,ident,key,model,prompt,mode),daemon=True).start()
         started=True
@@ -191,8 +186,11 @@ def run_job(path,ident,key,model,prompt,mode):
                     messages.extend([{"role":"user","content":old_prompt[:3000]},{"role":"assistant","content":old_answer[:4000]}])
         messages.append({"role":"user","content":prompt})
         payload={"model":model,"messages":messages,"max_completion_tokens":TOKEN_LIMIT,"stream":True,"stream_options":{"include_usage":True}}
+        if mode=="reasoning": messages[0]["content"]+=" Analyze carefully and give a concise answer with key justifications."
         if mode=="json": payload["response_format"]={"type":"json_object"}
-        if mode=="tools": payload["tools"]=[{"type":"function","function":{"name":"local_counts","description":"Read number of local memory records and links","parameters":{"type":"object","properties":{},"additionalProperties":False}}}];payload["tool_choice"]="auto";payload["parallel_tool_calls"]=False
+        if mode=="tools":
+            payload["tools"]=[{"type":"function","function":{"name":name,"description":desc,"parameters":schema}} for name,desc,schema in TOOL_DEFS]
+            payload["tool_choice"]="auto";payload["parallel_tool_calls"]=False
         names={};args={};done=False;last_write=0
         for chunk in stream_response(key,payload):
             if chunk is None: done=True;break
@@ -218,9 +216,9 @@ def run_job(path,ident,key,model,prompt,mode):
                 last_write=time.monotonic()
         if not done: raise ValueError("Incomplete stream")
         if names:
-            if mode!="tools" or names!={0:"local_counts"} or json.loads(args.get(0,"{}"))!={}: raise ValueError("Tool not permitted")
-            with closing(db_open(path)) as db:
-                tool_result=json.dumps({"nodes":db.execute("SELECT COUNT(*) FROM nodes").fetchone()[0],"edges":db.execute("SELECT COUNT(*) FROM edges").fetchone()[0]})
+            if mode!="tools" or len(names)!=1: raise ValueError("Tool not permitted")
+            idx=next(iter(names))
+            tool_result=json.dumps(local_tool(path,names[idx],json.loads(args.get(idx,"{}"))),ensure_ascii=False)
             # Do not automatically send local data back to the provider or charge a second request.
         elif mode=="json":
             if not isinstance(json.loads(answer),dict): raise ValueError("Expected JSON object")
@@ -236,6 +234,24 @@ def run_job(path,ident,key,model,prompt,mode):
         try:
             with closing(db_open(path)) as db, db:
                 db.execute("UPDATE cloud_jobs SET status=?,finished=?,answer=?,error=?,input_tokens=?,output_tokens=?,latency_ms=?,tool_result=? WHERE id=?",(outcome,now(),answer,error,*usage,round((time.monotonic()-start)*1000),tool_result,ident))
+                budget.settle(db,ident,*usage)
                 db.execute("UPDATE cloud_config SET successes=successes+?,failures=failures+?,input_tokens=input_tokens+?,output_tokens=output_tokens+? WHERE id=1",(int(outcome=="done"),int(outcome!="done"),usage[0] or 0,usage[1] or 0))
         finally:
             ACTIVE.release()
+
+TOOL_DEFS=[
+ ("local_counts","Read counts of memory records and links",{"type":"object","properties":{},"additionalProperties":False}),
+ ("local_search","Search local record titles; result stays local",{"type":"object","properties":{"query":{"type":"string"}},"required":["query"],"additionalProperties":False}),
+ ("local_categories","Count records by category",{"type":"object","properties":{},"additionalProperties":False}),
+ ("local_date","Current local date and time",{"type":"object","properties":{},"additionalProperties":False})]
+def local_tool(path,name,args):
+    if not isinstance(args,dict): raise ValueError("Invalid tool arguments")
+    if name=="local_search":
+        if set(args)!={"query"} or not isinstance(args["query"],str) or not 1<=len(args["query"])<=300: raise ValueError("Invalid search")
+        return search(path,args["query"])
+    if args: raise ValueError("Unexpected arguments")
+    with closing(db_open(path)) as db:
+        if name=="local_counts": return {"nodes":db.execute("SELECT COUNT(*) FROM nodes").fetchone()[0],"edges":db.execute("SELECT COUNT(*) FROM edges").fetchone()[0]}
+        if name=="local_categories": return [dict(r) for r in db.execute("SELECT category,COUNT(*) count FROM nodes GROUP BY category")]
+        if name=="local_date": return {"local":datetime.now().astimezone().isoformat()}
+    raise ValueError("Tool not permitted")

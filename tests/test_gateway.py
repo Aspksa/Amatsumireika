@@ -16,7 +16,8 @@ class GatewayTest(unittest.TestCase):
             cloud_api.SESSION[str(path)]="fake-test-key"
             try:
                 with closing(gateway.db_open(path)) as db, db:
-                    db.execute("UPDATE cloud_config SET model='openai/gpt-5.5' WHERE id=1")
+                    db.execute("UPDATE cloud_config SET model='openai/gpt-5.5',models='[\"openai/gpt-5.5\"]' WHERE id=1")
+                gateway.budget.save(path,{"day":10,"month":100,"model":"openai/gpt-5.5","input":1,"output":1})
                 class Inline:
                     def __init__(self,target,args,daemon): self.target=target;self.args=args
                     def start(self): self.target(*self.args)
@@ -46,3 +47,16 @@ class GatewayTest(unittest.TestCase):
                 gateway.cache_vector(db,"test","Машина",[1,0])
             self.assertEqual(gateway.search(path,"Автомобиль","test")[0]["title"],"Машина")
             gateway.recover(path)
+
+    def test_budget_blocks_and_local_tools(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)/"db"
+            with patch.object(server,"DB",path):
+                server.initialize()
+                server.add_node("Машина","Знания")
+            with closing(gateway.db_open(path)) as db, db:
+                with self.assertRaises(ValueError): gateway.budget.reserve(db,"x","model",100,100)
+            self.assertEqual(gateway.local_tool(path,"local_counts",{})["nodes"],1)
+            self.assertEqual(gateway.local_tool(path,"local_search",{"query":"Машина"})[0]["title"],"Машина")
+            with self.assertRaises(ValueError): gateway.local_tool(path,"delete",{})
+            self.assertIn("reasoning",gateway.classify("deepseek-ai/DeepSeek-V4-Pro")["capabilities"])
