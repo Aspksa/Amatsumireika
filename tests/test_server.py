@@ -2,6 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 import sqlite3
+from contextlib import closing
 import server
 
 class AtlasTest(unittest.TestCase):
@@ -30,7 +31,7 @@ class AtlasTest(unittest.TestCase):
         self.assertEqual(server.snapshot()["nodes"][0]["id"],a)
 
     def test_legacy_schema(self):
-        with sqlite3.connect(server.DB) as db:
+        with closing(sqlite3.connect(server.DB)) as db, db:
             db.execute("DROP TABLE edges")
             db.execute("DROP TABLE nodes")
             db.execute("CREATE TABLE nodes(id INTEGER PRIMARY KEY,title TEXT NOT NULL,category TEXT NOT NULL)")
