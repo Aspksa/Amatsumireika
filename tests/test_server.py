@@ -54,6 +54,21 @@ class AtlasTest(unittest.TestCase):
         server.add_edge(a,b)
         self.assertEqual([e["kind"] for e in server.get_events()],["edge","node","node","settings"])
 
+    def test_created_at_and_scale(self):
+        a=server.add_node("Новая","Знания","Корень/Подпапка")
+        self.assertIsNotNone(server.snapshot()["nodes"][0]["created_at"])
+        with closing(server.connect()) as db, db:
+            for total in (1000,10000,50000,100000):
+                existing=db.execute("SELECT COUNT(*) FROM nodes").fetchone()[0]
+                db.executemany("INSERT INTO nodes(title,category,folder) VALUES(?,?,?)",
+                    ((f"Record {i}","Знания",f"Group/{i%250}") for i in range(existing,total)))
+                db.commit()
+                snap=server.snapshot()
+                self.assertEqual(len(snap["nodes"]),total)
+                self.assertEqual(len({n["id"] for n in snap["nodes"]}),total)
+                self.assertGreaterEqual(len({n["folder"] for n in snap["nodes"]}),250)
+        self.assertEqual(server.snapshot()["nodes"][0]["id"],a)
+
     def test_invalid(self):
         with self.assertRaises(ValueError):
             server.add_node("","Знания")
