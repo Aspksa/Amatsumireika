@@ -391,7 +391,13 @@ def add_edge(source,target):
         if result.rowcount:
             event(db,"edge",f"Связь {source} ↔ {target}")
 
-STATIC = {"/":("index.html","text/html; charset=utf-8"),"/style.css":("style.css","text/css; charset=utf-8"),"/dist/app.js":("dist/app.js","text/javascript; charset=utf-8")}
+STATIC = {"/":("index.html","text/html; charset=utf-8"),"/style.css":("style.css","text/css; charset=utf-8"),"/dist/app.js":("dist/app.js","text/javascript; charset=utf-8"),
+    "/fonts/source-serif.woff2":("fonts/source-serif.woff2","font/woff2"),
+    "/fonts/inter.ttf":("fonts/inter.ttf","font/ttf"),
+    "/fonts/manrope.ttf":("fonts/manrope.ttf","font/ttf"),
+    "/fonts/cormorant.woff2":("fonts/cormorant.woff2","font/woff2"),
+    "/fonts/jetbrains-mono.ttf":("fonts/jetbrains-mono.ttf","font/ttf")
+}
 
 class Handler(BaseHTTPRequestHandler):
     def reply(self,status,body,mime="application/json; charset=utf-8"):

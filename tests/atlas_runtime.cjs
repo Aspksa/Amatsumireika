@@ -69,7 +69,7 @@ assert.equal(spiral.length,365);assert.equal(timeGeometry(2027,1).length,28);ass
 for(const [i,v] of spiral.entries()){assert.ok(Number.isFinite(v.q.x)&&Number.isFinite(v.q.y));assert.equal(spiralIndex(v.q.x-160,v.q.y-160,spiral.length),i)}
 assert.ok(Math.hypot(spiral[364].q.x-160,spiral[364].q.y-160)>Math.hypot(spiral[0].q.x-160,spiral[0].q.y-160));
 assert.ok(timeGeometryCache.size<=32);assert.equal(timeShape,"spiral");
-assert.deepEqual(Array.from({length:12},(_,i)=>seasonOf(i)),["winter","winter","spring","spring","spring","summer","summer","summer","autumn","autumn","autumn","winter"]);assert.equal(seasonPaint(0,true),"#f1f5fa");assert.equal(seasonPaint(6,true),"#68d79a");assert.notEqual(seasonPaint(0,true),seasonPaint(0,false));
+assert.deepEqual(Array.from({length:12},(_,i)=>seasonOf(i)),["winter","winter","spring","spring","spring","summer","summer","summer","autumn","autumn","autumn","winter"]);assert.equal(seasonPaint(0,true),"#f1f5fa");assert.equal(seasonPaint(6,true),"#68d79a");assert.equal(seasonalRayColor(new Date(2027,6,15),true),seasonPaint(6,true));assert.notEqual(seasonalRayColor(new Date(2027,5,1),true),seasonPaint(5,true));assert.notEqual(seasonalRayColor(new Date(2027,4,31),true),seasonPaint(4,true));assert.notEqual(seasonPaint(0,true),seasonPaint(0,false));
 assert.equal(isoWeek(new Date(2027,0,1)),53);assert.equal(isoWeek(new Date(2027,0,4)),1);assert.equal(isoWeek(new Date(2028,11,31)),52);
 assert.ok(spiral.every(v=>Math.hypot(v.q.x-160,v.q.y-160)<=127.01));
 assert.equal(new Set(spiral.map(v=>dayKey(v.d))).size,365);assert.equal(new Set(timeGeometry(2028,null).map(v=>dayKey(v.d))).size,366);

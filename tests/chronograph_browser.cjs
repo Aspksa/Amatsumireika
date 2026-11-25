@@ -30,6 +30,10 @@ async function main(){
   await send("Page.navigate",{url});
   await until(()=>evaluate('Boolean(document.querySelector("#time-overlay")?.getAttribute("data-frame"))'),"animation starts");
   const sample=()=>evaluate(`(()=>{const el=document.querySelector("#time-overlay"),c=el.getContext("2d"),d=c.getImageData(0,0,el.width,el.height).data;let hash=2166136261,lit=0;for(let i=0;i<d.length;i+=4){if(d[i+3]>35){lit++;hash=Math.imul(hash^d[i]^d[i+1]<<8^d[i+2]<<16^d[i+3]<<24,16777619)}}const w=el.getBoundingClientRect(),p=document.querySelector("#left").getBoundingClientRect(),clock=document.querySelector("#clock").getBoundingClientRect();return {frame:Number(el.getAttribute("data-frame")),hash,lit,width:w.width,height:w.height,top:w.top-p.top,clockCenter:Math.abs(clock.left+clock.width/2-w.left-w.width/2),clockText:document.querySelector("#clock").textContent,year:document.querySelector("#month-grid .is-selected").dataset.date.slice(0,4),localYear:String(new Date().getFullYear()),homeDetails:document.querySelectorAll("#left details").length,yearButtons:document.querySelectorAll("#year-2026,#year-auto,#year-2027").length}})()`);
+  await evaluate(`Promise.all([["Inter","Интерфейс"],["Manrope","123456"],["Source Serif 4","Личность"],["Cormorant Garamond","Amatsumireika"],["JetBrains Mono","Данные"]].map(([f,t])=>document.fonts.load(\x2716px "\x27+f+\x27"\x27,t)))`);
+  assert.equal(await evaluate(`Array.from(document.fonts).filter(f=>f.status==="loaded").length`),5);
+  assert.equal(await evaluate(`document.querySelectorAll("#clock .clock-seconds").length`),3);
+  assert.ok(await evaluate(`parseFloat(getComputedStyle(document.querySelector("#clock .clock-seconds")).fontSize)<parseFloat(getComputedStyle(document.querySelector("#clock")).fontSize)`));
   const a=await sample();await delay(1250);const b=await sample();
   assert.ok(a.width>100&&Math.abs(a.width-a.height)<2,"square visible canvas "+JSON.stringify(a));
   assert.ok(a.top>=0&&a.top<25,"wheel top-aligned "+a.top);
@@ -39,6 +43,7 @@ async function main(){
   assert.equal(await evaluate('document.querySelector(".chrono-clock").firstElementChild.id'),"clock");
   assert.equal(await evaluate('document.querySelector(".chrono-stats")===null'),true);
   assert.equal(await evaluate('document.querySelector("#month-grid").children.length'),42);
+  assert.ok(await evaluate(`getComputedStyle(document.querySelector("#month-heading")).getPropertyValue("--season-dark").trim().startsWith("#")`));
   assert.equal(await evaluate('document.querySelector(".chrono-select,.month-footer,#month-today,#selected-date,#calendar-date-label,#month-expand")===null'),true);
   assert.equal(await evaluate('getComputedStyle(document.querySelector(".month-calendar")).borderTopWidth'),"0px");
   const reset=()=>evaluate('document.querySelector("#month-grid").dispatchEvent(new KeyboardEvent("keydown",{key:"Home",bubbles:true}))');
