@@ -102,6 +102,15 @@ def get_calendars():
     with closing(connect()) as db:
         return {"calendars":[json.loads(r[0]) for r in db.execute("SELECT payload FROM production_calendars ORDER BY year")],"status":"Локальные данные"}
 
+def load_bundled_calendars():
+    try:
+        raw=(ROOT / "calendar" / "production-calendar.json").read_bytes()
+        if len(raw)>262144:
+            raise ValueError("Manifest too large")
+        return save_calendar_manifest(json.loads(raw))
+    except (OSError,ValueError,TypeError):
+        return get_calendars()
+
 def refresh_calendars():
     if not CALENDAR_LOCK.acquire(blocking=False):
         return {**get_calendars(),"status":"Обновление уже выполняется"}
@@ -284,6 +293,7 @@ def main():
     parser.add_argument("--port",type=int,default=0)
     args=parser.parse_args()
     initialize()
+    load_bundled_calendars()
     with ThreadingHTTPServer(("127.0.0.1",args.port),Handler) as server:
         url=f"http://127.0.0.1:{server.server_port}"
         print(url,flush=True)
