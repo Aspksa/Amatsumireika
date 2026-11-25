@@ -326,3 +326,42 @@ main:not(.expanded) #left{border:0;gap:0;padding-bottom:12px}
 :root.paper #left #month-heading[aria-pressed="true"],:root.paper #left .month-day.kind-weekend,:root.paper #left .month-day.kind-transfer{color:#80550f}
 :root.paper #left .month-day.kind-holiday{color:#704605;background:transparent}
 :root.paper #left .month-day.is-selected{background:#80550f;color:#fff6e5}
+
+/* Imperial typography, self-hosted OFL fonts; no network/CDN dependencies. */
+@font-face{font-family:"Source Serif 4";src:url("/fonts/source-serif.woff2") format("woff2");font-weight:400;font-style:normal;font-display:swap}
+@font-face{font-family:Inter;src:url("/fonts/inter.ttf") format("truetype");font-weight:100 900;font-style:normal;font-display:swap}
+@font-face{font-family:Manrope;src:url("/fonts/manrope.ttf") format("truetype");font-weight:200 800;font-style:normal;font-display:swap}
+@font-face{font-family:"Cormorant Garamond";src:url("/fonts/cormorant.woff2") format("woff2");font-weight:600;font-style:normal;font-display:swap}
+@font-face{font-family:"JetBrains Mono";src:url("/fonts/jetbrains-mono.ttf") format("truetype");font-weight:100 800;font-style:normal;font-display:swap}
+:root{--sans:Inter,"Segoe UI",Arial,sans-serif;--mono:"JetBrains Mono","Cascadia Mono",Consolas,monospace;--serif:"Source Serif 4",Georgia,serif;--numbers:Manrope,Inter,"Segoe UI",sans-serif;--display:"Cormorant Garamond",Georgia,serif;--type-xs:clamp(10px,.75vw,12px);--type-sm:clamp(12px,.9vw,14px);--type-base:clamp(13px,1vw,15px)}
+body{font:400 var(--type-base)/1.5 var(--sans)}
+button,input,select,textarea{font-family:var(--sans)}
+button,input,select{font-size:var(--type-sm)}
+.brand-name{font:600 clamp(18px,1.65vw,26px)/1 var(--display);letter-spacing:.015em}
+.brand em{font:500 var(--type-sm) var(--sans)}
+.brand small,#status,#counts,.chat-meta{font-size:var(--type-xs)}
+.stage-title h1{font:600 clamp(19px,2vw,30px)/1.15 var(--display);letter-spacing:.02em}
+.stage-title p{font:500 var(--type-xs)/1.4 var(--sans);letter-spacing:.04em}
+h2{font:650 var(--type-xs)/1.4 var(--sans);letter-spacing:.08em}
+#chat-log{gap:clamp(14px,1.5vw,24px)}
+.chat-message:not(.user)>div:last-child,.chat-empty{font:400 clamp(15px,1.2vw,18px)/1.66 var(--serif);letter-spacing:0}
+.chat-message.user>div:last-child,#chat-input{font:400 var(--type-base)/1.55 var(--sans)}
+.chat-heading strong{font:600 clamp(15px,1.2vw,18px)/1.3 var(--display)}
+.chrono-clock{width:44%;gap:0}
+.chrono-clock #clock{font:450 clamp(14px,9.4cqw,40px)/1 var(--numbers);font-variant-numeric:tabular-nums lining-nums;letter-spacing:-.045em;display:flex;align-items:baseline;justify-content:center;white-space:nowrap;text-shadow:0 0 9px #eac27530}
+#clock .cinema-digit{min-width:.57em;text-align:center}
+#clock .cinema-colon{min-width:.27em;text-align:center;animation:none}
+#clock .clock-seconds{font-size:.72em;opacity:.78}
+#clock .cinema-digit.digit-arrive{animation-duration:.24s}
+#clock .cinema-digit.digit-arrive[data-old]:after{animation-duration:.2s}
+#left #month-heading{font:650 clamp(14px,5cqw,20px)/1.3 var(--numbers);color:var(--season-dark,var(--ink))}
+:root.paper #left #month-heading{color:var(--season-light,var(--ink))}
+#left .month-weekdays{font:500 var(--type-xs)/1.4 var(--sans);letter-spacing:.01em}
+#left .month-day{font:550 clamp(12px,4.5cqw,17px)/1.2 var(--numbers);font-variant-numeric:tabular-nums;transition:color .18s,background-color .18s}
+#left .month-day.kind-weekend,#left .month-day.kind-transfer{font-weight:650}
+#left .month-day.kind-holiday{font-weight:750}
+#left.chrono-month-transition #month-grid{animation:monthSlide .28s cubic-bezier(.2,.8,.2,1) both}
+@keyframes monthSlide{from{opacity:.35;transform:translateX(var(--month-slide,0px))}to{opacity:1;transform:translateX(0)}}
+#left[data-cinema="off"] #month-grid{animation:none}
+@media(prefers-reduced-motion:reduce){#left.chrono-month-transition #month-grid{animation:none}#left .month-day{transition:none}}
+@media(max-width:760px){.brand-name{font-size:20px}.brand em{font-size:12px}.stage-title h1{font-size:22px}}
