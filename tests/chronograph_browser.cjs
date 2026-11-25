@@ -42,7 +42,9 @@ async function main(){
   assert.equal(await evaluate('document.querySelector(".chrono-clock").children.length'),1);
   assert.equal(await evaluate('document.querySelector(".chrono-clock").firstElementChild.id'),"clock");
   assert.equal(await evaluate('document.querySelector(".chrono-stats")===null'),true);
-  assert.equal(await evaluate('document.querySelector("#month-grid").children.length'),42);
+  assert.ok([28,35,42].includes(await evaluate('document.querySelector("#month-grid").children.length')));
+  assert.equal(await evaluate('getComputedStyle(document.querySelector("#clock .cinema-digit"),"::after").display'),"none");
+  assert.equal(await evaluate('getComputedStyle(document.querySelector(".month-day.is-today"),"::before").borderTopStyle'),"solid");
   assert.ok(await evaluate('document.querySelector(".month-calendar").getBoundingClientRect().top-document.querySelector(".chrono-wheel").getBoundingClientRect().bottom>=23'),"calendar below wheel");
   assert.equal(await evaluate('document.querySelector("#spiral-tooltip").hidden'),true);
   await evaluate('(()=>{const w=document.querySelector("#year-wheel"),r=w.getBoundingClientRect();w.dispatchEvent(new PointerEvent("pointermove",{clientX:r.left+r.width/2,clientY:r.top+r.height*(192-76)/384,bubbles:true}))})()');
@@ -65,6 +67,10 @@ async function main(){
   assert.equal(await evaluate('document.querySelector("[data-date=\\"2026-11-04\\"]").classList.contains("kind-holiday")'),true);
   assert.equal(await evaluate('document.querySelector("[data-date=\\"2026-11-07\\"]").classList.contains("kind-weekend")'),true);
   assert.equal(await evaluate('getComputedStyle(document.querySelector("[data-date=\\"2026-11-07\\"]")).color'),"rgb(228, 184, 94)");
+  await reset();
+  await evaluate('document.querySelector("#chrono-jump").value="2028-02-29";document.querySelector("#chrono-jump-go").click()');
+  assert.equal(await evaluate('document.querySelector("#month-grid .is-selected").dataset.date'),"2028-02-29");
+  assert.equal(await evaluate('document.querySelector("#month-grid").children.length'),35);
   await reset();
   await evaluate('document.querySelector("#month-heading").click()');
   assert.equal(await evaluate('document.querySelector("#month-heading").getAttribute("aria-pressed")'),"true");

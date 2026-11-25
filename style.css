@@ -377,3 +377,41 @@ h2{font:650 var(--type-xs)/1.4 var(--sans);letter-spacing:.08em}
 /* Full radial month names: annual label gutter shares the exact Canvas/overlay transform. */
 #left[data-time-detail="year"] .chrono-clock{width:37%}
 #left[data-time-detail="year"] .chrono-clock #clock{font-size:clamp(12px,7.8cqw,34px)}
+
+/* Chronos 5: one frameless, responsive time composition. */
+#left{--chrono-gold:#ffd17a;--chrono-season:var(--chrono-season-dark,#e9a349);--chrono-daylight:1}
+:root.paper #left{--chrono-gold:#80550f;--chrono-season:var(--chrono-season-paper,#a35b19)}
+#left .chrono-wheel{background:radial-gradient(ellipse at center,color-mix(in srgb,var(--chrono-season) 5%,transparent),transparent 48%)}
+#left .month-calendar{margin:clamp(24px,5cqw,42px) auto 0;max-width:440px;padding:0 5px 10px}
+#left .month-nav{gap:8px;align-items:center}
+#left .month-nav button{min-height:34px;color:var(--chrono-season);border-radius:50%}
+#left .month-nav button:hover{background:color-mix(in srgb,var(--chrono-season) 9%,transparent)}
+#left #month-heading{font:550 clamp(15px,5.5cqw,22px)/1.3 var(--numbers);letter-spacing:-.025em;border-radius:0}
+#left #month-grid,#left .month-weekdays{gap:clamp(3px,1.5cqw,8px)}
+#left .month-day{position:relative;isolation:isolate;min-width:0;border-radius:50%;aspect-ratio:1/1;min-height:0;height:auto;font-weight:500}
+#left .month-day.is-past:not(.is-selected):not(.kind-holiday):not(.kind-weekend):not(.kind-transfer){opacity:.64}
+#left .month-day.kind-holiday{color:#ffe6a1;text-decoration:none;font-weight:750}
+:root.paper #left .month-day.kind-holiday{color:#704605}
+#left .month-day.is-today,#left .month-day.is-selected{background:transparent;color:var(--chrono-gold);text-decoration:none;outline:0;opacity:1}
+#left .month-day.is-today::before,#left .month-day.is-selected::after{content:"";position:absolute;inset:8%;border:1px solid var(--chrono-gold);border-radius:50%;pointer-events:none}
+#left .month-day.is-today::before{box-shadow:0 0 9px color-mix(in srgb,var(--chrono-gold) 22%,transparent);animation:chronoBreath 4s ease-in-out infinite}
+#left .month-day.is-selected::after{background:color-mix(in srgb,var(--chrono-gold) 13%,transparent);z-index:-1;border-style:solid}
+#left .month-day.is-today.is-selected::after{inset:14%;border:0}
+#left .month-day.ring-arrive::after{animation:chronoRingMove .32s cubic-bezier(.2,.8,.2,1) both}
+#left .month-day:hover{background:color-mix(in srgb,var(--chrono-season) 12%,transparent)}
+#left .month-day:focus-visible{outline:2px solid var(--chrono-gold);outline-offset:2px}
+#left #clock .cinema-digit::after{display:none!important;content:none!important}
+#left #clock .cinema-digit.digit-arrive{animation:chronoSingleDigit .22s ease-out both}
+#left #clock .clock-seconds.digit-arrive{animation:chronoSecondLight .28s ease-out both}
+#left[data-time-detail="year"] .chrono-clock #clock{font-weight:400;letter-spacing:-.035em}
+#left .chrono-clock #clock{text-shadow:0 0 12px color-mix(in srgb,var(--chrono-gold) 22%,transparent)}
+@keyframes chronoSingleDigit{from{opacity:.55;transform:translateY(1px)}to{opacity:1;transform:none}}
+@keyframes chronoSecondLight{from{opacity:.58;text-shadow:0 0 8px var(--chrono-gold)}to{opacity:.78;text-shadow:none}}
+@keyframes chronoBreath{0%,100%{opacity:.75}50%{opacity:1;box-shadow:0 0 12px color-mix(in srgb,var(--chrono-gold) 32%,transparent)}}
+@keyframes chronoRingMove{from{transform:translate(var(--ring-x),var(--ring-y));opacity:.65}to{transform:none;opacity:1}}
+#left[data-cinema="off"] .month-day::before,#left[data-cinema="off"] .month-day::after,#left[data-cinema="off"] #clock .cinema-digit,#left[data-cinema="quiet"] .month-day::before,#left[data-night="true"] .month-day::before{animation:none}
+@media(prefers-reduced-motion:reduce){#left .month-day::before,#left .month-day::after,#left #clock .cinema-digit{animation:none!important}}
+@media(max-width:760px){#left .month-calendar{margin-top:24px}}
+
+:root.paper #left .month-day.is-today,:root.paper #left .month-day.is-selected{background:transparent;color:var(--chrono-gold);outline:0;box-shadow:none}
+#left[data-cinema="off"] .month-day.ring-arrive::after,#left[data-cinema="quiet"] .month-day.ring-arrive::after{animation:none}

@@ -39,6 +39,17 @@ class AtlasTest(unittest.TestCase):
         server.initialize()
         self.assertEqual(server.snapshot()["nodes"][0]["folder"],"")
 
+    def test_chronos_settings_merge(self):
+        server.save_settings({"palette":"Океан","speed":1.2})
+        saved=server.save_settings({"cinemaMode":"quiet","cinemaPower":0.25})
+        self.assertEqual(saved,{"palette":"Океан","speed":1.2,"cinemaMode":"quiet","cinemaPower":0.25})
+        self.assertEqual(server.get_settings(),saved)
+        with self.assertRaises(ValueError):
+            server.save_settings({"cinemaPower":1.1})
+        with self.assertRaises(ValueError):
+            server.save_settings({"cinemaMode":"invalid"})
+        self.assertEqual(server.get_settings(),saved)
+
     def test_visual_settings_and_events(self):
         self.assertEqual(server.get_settings(),{})
         saved=server.save_settings({"palette":"Океан","speed":1.2,"showLabels":False})
