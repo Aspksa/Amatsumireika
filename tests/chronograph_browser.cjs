@@ -68,6 +68,10 @@ async function main(){
   assert.equal(await evaluate('document.querySelector("[data-date=\\"2026-11-07\\"]").classList.contains("kind-weekend")'),true);
   assert.equal(await evaluate('getComputedStyle(document.querySelector("[data-date=\\"2026-11-07\\"]")).color'),"rgb(228, 184, 94)");
   await reset();
+  await evaluate('document.querySelector("#chrono-jump").value="2028-02-29";document.querySelector("#chrono-jump-go").click()');
+  assert.equal(await evaluate('document.querySelector("#month-grid .is-selected").dataset.date'),"2028-02-29");
+  assert.equal(await evaluate('document.querySelector("#month-grid").children.length'),35);
+  await reset();
   await evaluate('document.querySelector("#month-heading").click()');
   assert.equal(await evaluate('document.querySelector("#month-heading").getAttribute("aria-pressed")'),"true");
   await evaluate('document.querySelector("#month-heading").click()');

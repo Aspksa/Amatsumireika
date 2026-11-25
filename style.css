@@ -379,7 +379,7 @@ h2{font:650 var(--type-xs)/1.4 var(--sans);letter-spacing:.08em}
 #left[data-time-detail="year"] .chrono-clock #clock{font-size:clamp(12px,7.8cqw,34px)}
 
 /* Chronos 5: one frameless, responsive time composition. */
-#left{--chrono-gold:#ffd17a;--chrono-season:#e9a349;--chrono-daylight:1}
+#left{--chrono-gold:#ffd17a;--chrono-season:var(--chrono-season-dark,#e9a349);--chrono-daylight:1}
 :root.paper #left{--chrono-gold:#80550f;--chrono-season:var(--chrono-season-paper,#a35b19)}
 #left .chrono-wheel{background:radial-gradient(ellipse at center,color-mix(in srgb,var(--chrono-season) 5%,transparent),transparent 48%)}
 #left .month-calendar{margin:clamp(24px,5cqw,42px) auto 0;max-width:440px;padding:0 5px 10px}
@@ -412,3 +412,6 @@ h2{font:650 var(--type-xs)/1.4 var(--sans);letter-spacing:.08em}
 #left[data-cinema="off"] .month-day::before,#left[data-cinema="off"] .month-day::after,#left[data-cinema="off"] #clock .cinema-digit,#left[data-cinema="quiet"] .month-day::before,#left[data-night="true"] .month-day::before{animation:none}
 @media(prefers-reduced-motion:reduce){#left .month-day::before,#left .month-day::after,#left #clock .cinema-digit{animation:none!important}}
 @media(max-width:760px){#left .month-calendar{margin-top:24px}}
+
+:root.paper #left .month-day.is-today,:root.paper #left .month-day.is-selected{background:transparent;color:var(--chrono-gold);outline:0;box-shadow:none}
+#left[data-cinema="off"] .month-day.ring-arrive::after,#left[data-cinema="quiet"] .month-day.ring-arrive::after{animation:none}

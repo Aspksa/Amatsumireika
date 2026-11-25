@@ -398,9 +398,9 @@ function cinemaDraw(c:CanvasRenderingContext2D,now:number,d:Date,dt:number,budge
  if(!budget.count||!cinemaPower)return;
  const ref=dayKey(timeReference(d)),filled=rays.filter(v=>dayKey(v.d)<=ref);
  const target=filled.length?filled[filled.length-1].q:p,phase=now*.001,power=cinemaPower*(.58+.42*Math.sin(Math.PI*(d.getHours()+d.getMinutes()/60)/24));
- const todayRay=rays.find(v=>dayKey(v.d)===dayKey(d));
+ const liveKey=dayKey(d),todayRay=rays.find(v=>dayKey(v.d)===liveKey);
  if(todayRay){const ratio=weekProgress(d),q={x:todayRay.p.x+(todayRay.q.x-todayRay.p.x)*ratio,y:todayRay.p.y+(todayRay.q.y-todayRay.p.y)*ratio};cinemaLine(c,todayRay.p,q,gold,2,.7*power)}
- const linked=rays.find(v=>dayKey(v.d)===chronosLinkDate),lf=(now-chronosLinkAt)/650;
+ const lf=(now-chronosLinkAt)/650,linked=lf>=0&&lf<1?rays.find(v=>dayKey(v.d)===chronosLinkDate):undefined;
  if(linked&&lf>=0&&lf<1){const t=eased(lf),q={x:linked.p.x+(linked.q.x-linked.p.x)*t,y:linked.p.y+(linked.q.y-linked.p.y)*t};cinemaGlow(c,q.x,q.y,7,gold,Math.sin(Math.PI*lf)*power);cinemaLine(c,linked.p,q,gold,1.8,(1-lf)*power)}
  cinemaYearTransition(c,now,power);
  cinemaWave(c,now,cinemaRevealAt,650,gold,72,138,.36*power);
@@ -455,7 +455,7 @@ function cinemaSettings(){
  try{localStorage.setItem("chrono-cinema-v2",JSON.stringify({mode:cinemaMode,power:cinemaPower}))}catch{}
  wakeCinema();
 }
-function viewDates(y:number){const all=yearDates(y);return detailMonth===null?all:all.filter(d=>d.getMonth()===detailMonth)}
+function viewDates(y:number){const all=geometryDates(y);return detailMonth===null?all:all.filter(d=>d.getMonth()===detailMonth)}
 function elapsedProduction(year:number,now:Date){const dates=yearDates(year),total=productionStats(dates);if(!total)return null;const past=dates.filter(d=>dayKey(d)<dayKey(now)),done=past.length?productionStats(past):{work:0,h40:0};return done?{remaining:total.work-done.work,doneHours:done.h40}:null}
 // Monday-first calendar weeks clipped to each month, including partial weeks.
 function monthWeek(d:Date){const first=new Date(d.getFullYear(),d.getMonth(),1,12),offset=(first.getDay()+6)%7,last=new Date(d.getFullYear(),d.getMonth()+1,0,12).getDate();return {index:Math.floor((offset+d.getDate()-1)/7),count:Math.ceil((offset+last)/7)}}
@@ -615,11 +615,11 @@ function monthDayKind(d:Date):DayType{
 function renderMonthGrid(current:Date,now:Date){
  const y=current.getFullYear(),m=current.getMonth(),selected=dayKey(current),today=dayKey(now),root=$("month-grid");
  text($("month-heading"),current.toLocaleDateString("ru-RU",{month:"long",year:"numeric"}));$("spiral-tooltip").hidden=true;
- $<HTMLInputElement>("chrono-jump").value=selected;
  const signature=[selected,today,JSON.stringify(productionRules[y]??null),detailMonth].join("|");
  if(signature===chronosRenderKey)return;
+ $<HTMLInputElement>("chrono-jump").value=selected;chronosPreview("");
  const prev=root.querySelector<HTMLElement>(".is-selected"),previousRect=prev?.getBoundingClientRect();chronosRenderKey=signature;
- $("left").style.setProperty("--chrono-season",seasonPaint(m,true));$("left").style.setProperty("--chrono-season-paper",seasonPaint(m,false));
+ $("left").style.setProperty("--chrono-season-dark",seasonPaint(m,true));$("left").style.setProperty("--chrono-season-paper",seasonPaint(m,false));
  $("month-heading").setAttribute("aria-pressed",String(detailMonth!==null));$("month-heading").style.setProperty("--season-dark",seasonPaint(m,true));$("month-heading").style.setProperty("--season-light",seasonPaint(m,false));
  text($("month-rule-notice"),productionRules[y]?"":"Переносы на этот год не загружены; показаны обычные выходные и фиксированные праздники.");
  $<HTMLButtonElement>("month-prev").disabled=y===2026&&m===0;
@@ -658,7 +658,7 @@ function chooseCalendarYear(year:number|null,now=chronosNow()){const prior=displ
 function openCalendarMonth(m:number,now=chronosNow()){if(m<0||m>11)return;cinemaRevealAt=performance.now();wakeCinema();detailMonth=m;const y=displayedYear(now);if(daySelected.slice(0,7)!==dayKey(new Date(y,m,1)).slice(0,7))daySelected=dayKey(new Date(y,m,1,12));renderCalendar(now);animateMonthSwitch()}
 function closeCalendarMonth(now=chronosNow()){cinemaRevealAt=performance.now();wakeCinema();detailMonth=null;renderCalendar(now);animateMonthSwitch()}
 
-wheel.addEventListener("pointerup",e=>{const rect=wheel.getBoundingClientRect();if(!rect.width||!rect.height)return;const p=timePointer(e.clientX,e.clientY,rect,detailMonth!==null),hit=calendarHit(p.x,p.y,viewDates(displayedYear(new Date())),detailMonth!==null);if(!hit)return;if(hit.month){openCalendarMonth(hit.date.getMonth());return}selectMonthDate(hit.date)});
+wheel.addEventListener("pointerup",e=>{const rect=wheel.getBoundingClientRect();if(!rect.width||!rect.height)return;const p=timePointer(e.clientX,e.clientY,rect,detailMonth!==null),hit=calendarHit(p.x,p.y,viewDates(displayedYear(chronosNow())),detailMonth!==null);if(!hit)return;if(hit.month){openCalendarMonth(hit.date.getMonth());return}selectMonthDate(hit.date)});
 wheel.addEventListener("dblclick",e=>{e.preventDefault();closeCalendarMonth()});
 new ResizeObserver(()=>drawYear()).observe(wheel);
 // Canvas labels are redrawn when local fonts finish loading, with safe system-font fallback.
@@ -711,7 +711,7 @@ async function renderTimeSnapshots(save=false){try{const list=await jsonRequest(
 
 $("time-replay").onclick=()=>startTimePlayback("year");$("time-events-replay").onclick=()=>startTimePlayback("events");$("time-live").onclick=stopTimePlayback;
 $("time-travel").onclick=()=>historySelect(daySelected);$("time-snapshot").onclick=()=>void renderTimeSnapshots(true);$("time-refresh").onclick=()=>{timeWindowKey="";void refreshTimeWindow();void renderTimeSnapshots()};
-wheel.addEventListener("pointermove",e=>{const rect=wheel.getBoundingClientRect();timeCursor=timePointer(e.clientX,e.clientY,rect,detailMonth!==null);const hit=calendarHit(timeCursor.x,timeCursor.y,viewDates(displayedYear(new Date())),detailMonth!==null),tip=$("spiral-tooltip");
+wheel.addEventListener("pointermove",e=>{const rect=wheel.getBoundingClientRect();timeCursor=timePointer(e.clientX,e.clientY,rect,detailMonth!==null);const hit=calendarHit(timeCursor.x,timeCursor.y,viewDates(displayedYear(chronosNow())),detailMonth!==null),tip=$("spiral-tooltip");
  if(!hit){tip.hidden=true;return}
  const d=hit.date;tip.hidden=false;text(tip,hit.month?d.toLocaleDateString("ru-RU",{month:"long",year:"numeric"}):d.toLocaleDateString("ru-RU",{day:"numeric",month:"long",year:"numeric",weekday:"long"})+" · неделя "+(monthWeek(d).index+1));
 });wheel.addEventListener("pointerleave",()=>{timeCursor={x:0,y:0};$("spiral-tooltip").hidden=true});
