@@ -168,6 +168,9 @@ def upload(path,data):
                 if deferred:
                     import document_workspace
                     document_workspace.enqueue(db,ident)
+                elif status=="indexed":
+                    import document_intelligence
+                    document_intelligence.index_document(db,ident)
                 event(db,ident,"Документ загружен",node)
                 result=meta(get(db,ident))
                 db.commit()
@@ -235,13 +238,18 @@ def action(path,data):
         elif kind=="candidates" and not r["deleted"]:
             if r["extract_status"]!="indexed":raise ValueError("Нет проверенного текстового индекса")
             import cognitive
+            import document_intelligence as intelligence
             count=0
-            for line in r["content"].splitlines()[:1000]:
-                match=re.fullmatch(r"\s*(факт|событие|навык|привычка|предпочтение|причина|цель|запомни)\s*[:：]\s*(.+)",line,re.I)
+            for number,offset,line in intelligence.lines(r["content"]):
+                if count>=20:break
+                match=intelligence.LABEL.fullmatch(line)
                 if match and count<20:
                     k=cognitive.LABELS[match[1].casefold()];title=match[2].strip()
                     if cognitive.safe(title):
-                        cognitive.proposal(db,k,title,"document:"+str(r["id"]),cognitive.subject_of(title,k),.5,1);count+=1
+                        cognitive.proposal(db,k,title,"document:"+str(r["id"]),cognitive.subject_of(title,k),.5,1)
+                        fingerprint=cognitive.digest(k+"\0"+title)
+                        intelligence.capture(db,r["id"],fingerprint,r["content"],number,offset,line)
+                        count+=1
             event(db,r["id"],"Кандидаты из документа проверены",r["node_id"])
             return {"ok":True,"scanned":count}
         elif kind=="link" and not r["deleted"]:
