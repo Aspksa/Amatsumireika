@@ -227,3 +227,12 @@ main:not(.expanded) #left{padding:clamp(6px,1vw,16px);justify-content:center;gap
 @media(prefers-reduced-motion:reduce){.cinema-digit,.cinema-digit:after,.cinema-colon{animation:none!important}.cinema-digit:after{display:none}}
 
 #left[data-night="true"] .cinema-digit,#left[data-night="true"] .cinema-colon{animation:none}#left[data-night="true"] .cinema-digit:after{display:none}#left[data-cinema="off"] .chrono-clock #clock{text-shadow:none}.chrono-clock #clock{text-shadow:0 0 calc(10px * var(--cinema-intensity,.72)) #eac27555}
+
+/* v1.2: top-aligned, square time display, no secondary tools on the home screen. */
+main:not(.expanded) #left{justify-content:flex-start;align-items:stretch;padding-top:clamp(4px,1vh,12px);gap:6px}
+.chrono-wheel{position:relative;aspect-ratio:1/1;height:auto;width:100%;flex:0 0 auto;max-width:440px;min-height:0;margin:0 auto;align-self:center}
+#year-wheel,#time-overlay{position:absolute;inset:0;width:100%;height:100%;display:block;box-sizing:border-box}
+#year-wheel{z-index:0}#time-overlay{z-index:1;pointer-events:none}.chrono-clock{z-index:2}
+.chrono-level[hidden]{display:none!important}.chrono-stats{padding-top:4px}.chrono-period{margin-bottom:7px}.chrono-extra{margin-top:8px}.chrono-month,.chrono-norms{margin-top:7px}
+#time-tools .time-actions button{width:auto}#time-tools .cinema-option{font-size:11px}
+@media(max-width:760px){main:not(.expanded) #left{padding-top:6px;align-self:start}}

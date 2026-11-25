@@ -232,7 +232,7 @@ function focusNode(id:number){if(!expanded)layout(true);if(!nodeGroups.has(id)&&
 canvas.addEventListener("dblclick",e=>{const id=hit(local(e));if(id!==null)focusNode(id)});
 function reset(){geometryKey="";cameraTarget=null;zoom=1;pan={x:0,y:0};$<HTMLInputElement>("zoom").value="1";filter=null;activeGroup=null;selected=null;rebuild();refreshPanels()}
 $("reset").onclick=reset;
-function layout(isExpanded:boolean){if(expanded===isExpanded)return;if(expanded)atlasMode=mode;expanded=isExpanded;revealAt=performance.now();$("atlas-loading").hidden=!expanded||reduced;groupHover=-1;$("module-tip").hidden=true;$("layout").classList.toggle("expanded",expanded);$("home").classList.toggle("active",!expanded);$("atlas").classList.toggle("active",expanded);text($("subtitle"),expanded?"Детальная карта памяти":"КОМАНДНЫЙ ЦЕНТР · ЖИВОЕ ЯДРО");text($("brand-mode"),expanded?"Атлас памяти":"Командный центр");mode=expanded?atlasMode:"radial";document.querySelectorAll<HTMLElement>("[data-mode]").forEach(x=>x.classList.toggle("active",x.dataset.mode===mode));resize();reset();positions.forEach(p=>{p.x*=.12;p.y*=.12});const el=$("layout");el.classList.remove("reveal");void el.offsetWidth;el.classList.add("reveal");text($("legend"),expanded?"Колесо — масштаб · Перетаскивание — перемещение · Двойной щелчок — фокус":"Нажмите на ядро, чтобы открыть полный атлас")}
+function layout(isExpanded:boolean){if(expanded===isExpanded)return;if(expanded)atlasMode=mode;expanded=isExpanded;revealAt=performance.now();$("atlas-loading").hidden=!expanded||reduced;groupHover=-1;$("module-tip").hidden=true;$("layout").classList.toggle("expanded",expanded);$("home").classList.toggle("active",!expanded);$("atlas").classList.toggle("active",expanded);text($("subtitle"),expanded?"Детальная карта памяти":"КОМАНДНЫЙ ЦЕНТР · ЖИВОЕ ЯДРО");text($("brand-mode"),expanded?"Атлас памяти":"Командный центр");mode=expanded?atlasMode:"radial";document.querySelectorAll<HTMLElement>("[data-mode]").forEach(x=>x.classList.toggle("active",x.dataset.mode===mode));resize();reset();positions.forEach(p=>{p.x*=.12;p.y*=.12});const el=$("layout");el.classList.remove("reveal");void el.offsetWidth;el.classList.add("reveal");text($("legend"),expanded?"Колесо — масштаб · Перетаскивание — перемещение · Двойной щелчок — фокус":"Нажмите на ядро, чтобы открыть полный атлас");if(!expanded){chooseCalendarYear(null);wakeCinema()}}
 $("core-open").onclick=()=>layout(true);
 $("home").onclick=()=>layout(false);$("atlas").onclick=()=>layout(true);
 document.querySelectorAll<HTMLButtonElement>("[data-mode]").forEach(b=>b.onclick=()=>{const keep=selected;mode=b.dataset.mode as Layout;atlasMode=mode;document.querySelectorAll("[data-mode]").forEach(x=>x.classList.toggle("active",x===b));cameraTarget=null;zoom=1;pan={x:0,y:0};$<HTMLInputElement>("zoom").value="1";groupHover=-1;if(keep!==null&&nodeGroups.has(keep))focusNode(keep);else rebuild();refreshCounts()});
@@ -356,7 +356,7 @@ function stopTimePlayback(){playbackRunning=false;playbackSerial++;historyDate=n
 // Cinematic layer. Date geometry remains authoritative and hit targets never move.
 type CinemaMode="auto"|"cinema"|"quiet"|"off";
 type Spark={x:number;y:number;vx:number;vy:number;life:number;max:number;size:number;hue:number};
-let cinemaMode:CinemaMode="auto",cinemaPower=.72,cinemaTier=2,cinemaVisible=true,cinemaPending=false;
+let cinemaMode:CinemaMode="cinema",cinemaPower=.9,cinemaTier=2,cinemaVisible=true,cinemaPending=false;
 let cinemaCost=0,cinemaFrames=0,cinemaSlow=0,cinemaFast=0,cinemaTick=0,cinemaClockText="",cinemaSecondAt=-100000;
 let cinemaMonthAt=-100000,cinemaQuarterAt=-100000,cinemaRevealAt=-100000,cinemaYearAt=-100000,cinemaBirthAt=-100000;
 let cinemaPreviousYear=0,cinemaPreviousDate="",cinemaReverse=false,playbackSerial=0,cinemaLastDate="";
@@ -408,19 +408,23 @@ function cinemaDraw(c:CanvasRenderingContext2D,now:number,d:Date,dt:number,budge
  const y=displayedYear(d),rays=interpolatedRays(y,now),ref=dayKey(timeReference(d));
  const index=rays.findIndex(v=>dayKey(v.d)===ref),target=index>=0?rays[index].q:secPoint;
  const breath=.8+.2*Math.sin(phase*.85);
- cinemaGlow(c,secPoint.x,secPoint.y,8,warm,.7*power);
- cinemaGlow(c,target.x,target.y,14+breath*4,"#eac275",.68*power);
+ cinemaGlow(c,secPoint.x,secPoint.y,11,warm,.9*power);
+ cinemaGlow(c,target.x,target.y,15+breath*5,"#eac275",.88*power);
  // Time-semantics: light flows only along elapsed dates; underlying rays stay fixed.
  const past=Math.max(0,rays.findIndex(v=>dayKey(v.d)>ref));const filled=ref>=dayKey(rays[rays.length-1].d)?rays.length:past;
- for(let i=0;i<Math.min(30,budget.count/2);i++){if(!filled)break;const f=((phase*.065+i/30)%1),idx=Math.min(filled-1,Math.floor(f*filled)),v=rays[idx],u=.3+.7*((phase*.35+i*.13)%1);const p={x:v.p.x+(v.q.x-v.p.x)*u,y:v.p.y+(v.q.y-v.p.y)*u};const q=cinemaLens(p,cinemaPointer,.16);cinemaGlow(c,q.x,q.y,2.3+(i%3),v.type?dayColors[v.type]:"#eac275",power*.45);if(i%3===0)cinemaLine(c,p,q,"#eac275",.6,power*.22)}
+ for(let i=0;i<Math.min(36,budget.count/2);i++){if(!filled)break;const f=((phase*.065+i/30)%1),idx=Math.min(filled-1,Math.floor(f*filled)),v=rays[idx],u=.3+.7*((phase*.35+i*.13)%1);const p={x:v.p.x+(v.q.x-v.p.x)*u,y:v.p.y+(v.q.y-v.p.y)*u};const q=cinemaLens(p,cinemaPointer,.16);cinemaGlow(c,q.x,q.y,4+(i%3),v.type?dayColors[v.type]:"#eac275",power*.75);if(i%3===0)cinemaLine(c,v.p,q,"#eac275",1.25,power*.46)}
  for(let i=0;i<budget.count;i++){
  const a=i*2.399963+phase*(i%2?.13:-.08),r=18+(i%17)*2.05,dr=Math.sin(phase*1.2+i)*1.8;
  const q=timePoint(a,r+dr),p={x:q.x+cinemaPointer.x*.017,y:q.y+cinemaPointer.y*.017};
  c.fillStyle=i%9===0?"#fff1c9":warm;c.globalAlpha=power*(.08+i%5*.035);c.beginPath();c.arc(p.x,p.y,i%9===0?1.1:.5,0,tau);c.fill()
  }c.globalAlpha=1;
  if(budget.rich){
+ // Continuous moving comet trails, bounded to decorative tracks.
+ const turn=phase*.9;
+ for(let j=0;j<3;j++){const a=turn*(j===1?-.65:1)+j*tau/3,r=58+j*7,col=cinemaColors[j];for(let k=0;k<12;k++){const end=a-k*.042;cinemaRing(c,r,end-.045,end,col,1.8,(1-k/12)*power*.9)}const p=timePoint(a,r);cinemaGlow(c,p.x,p.y,7,col,power*.9)}
+ if(filled>1){const lead=Math.floor(((phase*.12)%1)*filled);for(let i=0;i<Math.min(12,filled);i++){const j=(lead-i+filled)%filled,v=rays[j],q=v.q;cinemaGlow(c,q.x,q.y,7,"#eac275",(1-i/12)*power*.8);cinemaLine(c,v.p,q,"#eac275",1.5,(1-i/12)*power*.65)}}
  // Smooth aurora curves, separate orbital fields and cursor lens. No flashing fills.
- for(let i=0;i<3;i++){c.globalAlpha=power*.12;c.strokeStyle=cinemaColors[(i+1)%cinemaColors.length];c.lineWidth=.9;c.beginPath();for(let j=0;j<=48;j++){const a=j*tau/48,r=46+i*6+Math.sin(a*3+phase*.8+i)*2.8,q=timePoint(a,r);if(j===0)c.moveTo(q.x,q.y);else c.lineTo(q.x,q.y)}c.stroke()}c.globalAlpha=1;
+ for(let i=0;i<3;i++){c.globalAlpha=power*.28;c.strokeStyle=cinemaColors[(i+1)%cinemaColors.length];c.lineWidth=1.25;c.beginPath();for(let j=0;j<=48;j++){const a=j*tau/48,r=46+i*6+Math.sin(a*3+phase*.8+i)*2.8,q=timePoint(a,r);if(j===0)c.moveTo(q.x,q.y);else c.lineTo(q.x,q.y)}c.stroke()}c.globalAlpha=1;
  for(let i=0;i<3;i++){const a=phase*(i%2?.19:-.12)+i*2.1;cinemaRing(c,71+i*3,a,a+.7,cinemaColors[i],.7,power*.24)}
  for(let m=0;m<12;m++){const a=-Math.PI/2+(m+.5)*tau/12,amp=.5+.5*Math.sin(phase*1.4-m*.8);if(amp>.65){const p=timePoint(a,145),q=timePoint(a+.07,138+amp*4);cinemaLine(c,p,q,"#eac275",.7,power*.35*amp)}}
  // Decorative traveling wave follows the shape without changing hit geometry.
@@ -446,7 +450,7 @@ function overlayFrame(now:number){
  const start=performance.now(),dt=timeLast?Math.min(.05,(now-timeLast)/1000):1/60;timeLast=now;cinemaTick++;
  const c=timeOverlayCtx,sz=wheel.width;if(timeOverlay.width!==sz)timeOverlay.width=sz;if(timeOverlay.height!==sz)timeOverlay.height=sz;
  c.setTransform(sz/320,0,0,sz/320,0,0);c.clearRect(0,0,320,320);
- cinemaDraw(c,now,d,dt,budget);
+ cinemaDraw(c,now,d,dt,budget);timeOverlay.setAttribute("data-frame",String(cinemaTick));
  const cost=performance.now()-start;cinemaCost=cinemaFrames?cinemaCost*.94+cost*.06:cost;cinemaFrames++;
  if(cinemaCost>10){cinemaSlow++;cinemaFast=0}else if(cinemaCost<4){cinemaFast++;cinemaSlow=0}else{cinemaFast=0;cinemaSlow=0}
  if(cinemaSlow>=30){cinemaTier=Math.max(0,cinemaTier-1);cinemaSlow=0}
@@ -470,7 +474,7 @@ function cinemaSettings(){
  const p=Number($<HTMLInputElement>("cinema-power").value);if(Number.isFinite(p))cinemaPower=cinemaClamp(p/100,0,1);
  $("left").setAttribute("data-cinema",cinemaMode);$("left").style.setProperty("--cinema-intensity",String(cinemaPower));
  if(cinemaMode==="off"||cinemaPower===0){cinemaSparks.length=0;timeLast=0;cinemaMorphSerial++;drawYear()}
- try{localStorage.setItem("chrono-cinema-v1",JSON.stringify({mode:cinemaMode,power:cinemaPower}))}catch{}
+ try{localStorage.setItem("chrono-cinema-v2",JSON.stringify({mode:cinemaMode,power:cinemaPower}))}catch{}
  wakeCinema();
 }
 function viewDates(y:number){const all=yearDates(y);return detailMonth===null?all:all.filter(d=>d.getMonth()===detailMonth)}
@@ -510,9 +514,9 @@ function drawYear(now=new Date()){
 function renderCalendar(now=new Date()){
  const year=displayedYear(now),days=yearDates(year),stats=productionStats(days),current=daySelected.slice(0,4)===String(year)?new Date(daySelected+"T12:00:00"):new Date(year,0,1,12);
  const selected=dayKey(current);daySelected=selected;month=current;
- for(const [id,active] of [["year-2026",!autoYear&&year===2026],["year-auto",autoYear],["year-2027",!autoYear&&year===2027]] as [string,boolean][]){$(id).classList.toggle("active",active);$(id).setAttribute("aria-pressed",String(active))}
- $<HTMLInputElement>("selected-date").value=selected;
- const shown=viewDates(year);text($("year-progress"),shown.filter(d=>dayKey(d)<=dayKey(timeReference(now))).length+" / "+shown.length);text($("chrono-level"),detailMonth===null?"Год":monthNames[detailMonth]+" · "+year);$("chrono-back").hidden=detailMonth===null;
+
+ const input=$<HTMLInputElement>("selected-date");input.min=year+"-01-01";input.max=year+"-12-31";input.value=selected;
+ const shown=viewDates(year);text($("year-progress"),shown.filter(d=>dayKey(d)<=dayKey(timeReference(now))).length+" / "+shown.length);text($("chrono-level"),detailMonth===null?"":monthNames[detailMonth]);$("chrono-back").hidden=detailMonth===null;$("chrono-level-wrap").hidden=detailMonth===null;
  text($("prod-period"),String(year));
  text($("prod-work"),stats?String(stats.work):"—");text($("prod-rest"),stats?String(stats.rest):"—");text($("prod-hours"),stats?String(stats.h40):"—");
  const ms=productionStats(days.filter(d=>d.getMonth()===current.getMonth())),num=(n:number)=>n.toLocaleString("ru-RU");
@@ -524,8 +528,8 @@ function renderCalendar(now=new Date()){
  drawYear(now);if(timeDataReady&&!playbackRunning)void refreshTimeWindow();
 }
 function chooseCalendarYear(year:number|null,now=new Date()){const prior=displayedYear(now);if(prior!==(year??now.getFullYear())){cinemaYearAt=performance.now();cinemaPreviousYear=prior;wakeCinema()}historyDate=null;detailMonth=null;autoYear=year===null;calendarYear=year??now.getFullYear();daySelected=calendarYear===now.getFullYear()?dayKey(now):dayKey(new Date(calendarYear,0,1,12));renderCalendar(now)}
-$("year-2026").onclick=()=>chooseCalendarYear(2026);$("year-2027").onclick=()=>chooseCalendarYear(2027);$("year-auto").onclick=()=>chooseCalendarYear(null);$("today").onclick=()=>chooseCalendarYear(null);
-$<HTMLInputElement>("selected-date").onchange=e=>{const value=(e.target as HTMLInputElement).value;if(!/^\d{4}-\d{2}-\d{2}$/.test(value))return;const d=new Date(value+"T12:00:00");if(dayKey(d)!==value||d.getFullYear()<2026||d.getFullYear()>2100)return;calendarYear=d.getFullYear();autoYear=calendarYear===new Date().getFullYear();detailMonth=null;daySelected=value;renderCalendar()};
+$("today").onclick=()=>chooseCalendarYear(null);
+$<HTMLInputElement>("selected-date").onchange=e=>{const value=(e.target as HTMLInputElement).value;if(!/^\d{4}-\d{2}-\d{2}$/.test(value))return;const d=new Date(value+"T12:00:00");if(dayKey(d)!==value||d.getFullYear()!==displayedYear(new Date()))return;calendarYear=d.getFullYear();autoYear=calendarYear===new Date().getFullYear();detailMonth=null;daySelected=value;renderCalendar()};
 function openCalendarMonth(m:number,now=new Date()){if(m<0||m>11)return;cinemaRevealAt=performance.now();wakeCinema();detailMonth=m;const y=displayedYear(now);if(daySelected.slice(0,7)!==dayKey(new Date(y,m,1)).slice(0,7))daySelected=dayKey(new Date(y,m,1,12));renderCalendar(now)}
 function closeCalendarMonth(now=new Date()){cinemaRevealAt=performance.now();wakeCinema();detailMonth=null;renderCalendar(now)}
 $("chrono-back").onclick=()=>closeCalendarMonth();
@@ -583,7 +587,7 @@ $("time-replay").onclick=()=>startTimePlayback("year");$("time-events-replay").o
 $("time-travel").onclick=()=>historySelect(daySelected);$("time-snapshot").onclick=()=>void renderTimeSnapshots(true);$("time-refresh").onclick=()=>{timeWindowKey="";void refreshTimeWindow();void renderTimeSnapshots()};
 wheel.addEventListener("pointermove",e=>{const rect=wheel.getBoundingClientRect();timeCursor={x:(e.clientX-rect.left)/Math.max(1,rect.width)*320-160,y:(e.clientY-rect.top)/Math.max(1,rect.height)*320-160}});wheel.addEventListener("pointerleave",()=>timeCursor={x:0,y:0});
 timeOverlay=$<HTMLCanvasElement>("time-overlay");timeOverlayCtx=timeOverlay.getContext("2d");
-try{const saved=JSON.parse(localStorage.getItem("chrono-cinema-v1")??"{}");if(["auto","cinema","quiet","off"].includes(saved.mode))cinemaMode=saved.mode;if(typeof saved.power==="number"&&Number.isFinite(saved.power))cinemaPower=cinemaClamp(saved.power,0,1)}catch{}
+try{const saved=JSON.parse(localStorage.getItem("chrono-cinema-v2")??"{}");if(["auto","cinema","quiet","off"].includes(saved.mode))cinemaMode=saved.mode;if(typeof saved.power==="number"&&Number.isFinite(saved.power))cinemaPower=cinemaClamp(saved.power,0,1)}catch{}
 $<HTMLSelectElement>("cinema-mode").value=cinemaMode;$<HTMLInputElement>("cinema-power").value=String(cinemaPower*100);cinemaSettings();
 $("cinema-mode").onchange=cinemaSettings;$("cinema-power").oninput=cinemaSettings;
 $("time-reverse").onclick=()=>startTimePlayback("year",true);

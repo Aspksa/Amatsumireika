@@ -21,6 +21,7 @@ class Element {
   getContext(){return new Proxy({}, {get:(o,k)=>o[k]??(k==="createRadialGradient"?(()=>({addColorStop(){}})):(()=>{})),set:(o,k,v)=>{o[k]=v;return true}})}
   focus(){}
 }
+const html=fs.readFileSync("index.html","utf8");const home=html.slice(html.indexOf('<aside id="left"'),html.indexOf('<section id="stage"'));for(const unwanted of ["year-2026","year-auto","year-2027","day-events","calendar-refresh","time-history-status","cinema-mode","work-panel"])assert.ok(!home.includes('id="'+unwanted+'"'),"Removed from home: "+unwanted);
 const els=new Map();
 const document={getElementById:id=>{if(!els.has(id))els.set(id,new Element(id));return els.get(id)},createElement:()=>new Element(),createTextNode:s=>s,querySelectorAll:()=>[],addEventListener(){},documentElement:new Element(),body:new Element()};
 const ctx=vm.createContext({document,innerWidth:1108,devicePixelRatio:1,performance,matchMedia:()=>({matches:true}),ResizeObserver:class {observe(){}},requestAnimationFrame(){},setInterval(){},fetch:()=>new Promise(()=>{}),assert,console});
