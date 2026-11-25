@@ -37,7 +37,7 @@ def connect():
 
 def initialize():
     with closing(connect()) as db, db:
-        if db.execute("PRAGMA user_version").fetchone()[0]<5 and memory.table(db,"nodes") and db.execute("SELECT COUNT(*) FROM nodes").fetchone()[0]>0:
+        if db.execute("PRAGMA user_version").fetchone()[0]<5 and memory.table(db,"nodes"):
             backup=DB.with_name(DB.name+".before-v5.bak")
             if not backup.exists():
                 temp=backup.with_suffix(".tmp")
@@ -410,7 +410,7 @@ def send_chat(content):
         if command=="/помощь":
             append("system","Локальные команды: /статус, /найти текст, /план задача. Облачный ответ требует отдельного согласия.")
         elif command.startswith("/план "):
-            result=cognitive.plan(content[6:]);append("system","Локальный план: "+"; ".join(result["steps"]))
+            result=cognitive.adaptive_plan(DB,content[6:],db);append("system","Локальный план: "+"; ".join(result["steps"]))
         elif command.startswith("/найти "):
             # Reuse current connection to avoid a second writer while chat transaction is open.
             matches=[r["title"] for r in memory.search(db,content[7:],gateway.EMBED_MODEL)]
@@ -587,12 +587,15 @@ class Handler(BaseHTTPRequestHandler):
                 elif action=="relation": cognitive.relation(DB,data)
                 elif action=="settings": cognitive.configure(DB,data)
                 elif action=="feedback": cognitive.feedback(DB,data)
+                elif action=="preview":
+                    result=cognitive.lookup(DB,data.get("query"),False)
+                    self.reply(200,{"memory":[{"id":r["id"],"title":r["title"],"category":r["category"]} for r in result["results"] if cognitive.safe(r["title"])][:5]});return
                 elif action=="lookup":
                     self.reply(200,cognitive.lookup(DB,data.get("query"),True));return
                 elif action=="plan":
                     query=data.get("query")
                     if not isinstance(query,str) or not 1<=len(query)<=3000: raise ValueError("Invalid query")
-                    self.reply(200,cognitive.plan(query));return
+                    self.reply(200,cognitive.adaptive_plan(DB,query));return
                 else: self.reply(404,{"error":"Not found"});return
                 self.reply(200,cognitive.dashboard(DB));return
             if self.path=="/api/cloud/embed-search":
@@ -605,12 +608,18 @@ class Handler(BaseHTTPRequestHandler):
                 self.reply(202,gateway.submit(DB,data))
                 return
             if self.path=="/api/cloud/settings":
-                self.reply(200,cloud_api.save(DB,data))
+                if not gateway.ACTIVE.acquire(False): raise ValueError("Облачный запрос выполняется; настройки временно заблокированы")
+                try: result=cloud_api.save(DB,data)
+                finally: gateway.ACTIVE.release()
+                self.reply(200,result)
                 return
             if self.path=="/api/cloud/models":
                 if data != {"confirm": True}:
                     raise ValueError("Explicit catalog request required")
-                self.reply(200,cloud_api.refresh(DB))
+                if not gateway.ACTIVE.acquire(False): raise ValueError("Облачный запрос выполняется")
+                try: result=cloud_api.refresh(DB)
+                finally: gateway.ACTIVE.release()
+                self.reply(200,result)
                 return
             if self.path=="/api/calendar/refresh":
                 self.reply(200,refresh_calendars())
@@ -654,24 +663,31 @@ def main():
     parser.add_argument("--open",action="store_true")
     parser.add_argument("--port",type=int,default=0)
     args=parser.parse_args()
-    initialize()
-    gateway.recover(DB)
-    load_bundled_calendars()
-    logging.basicConfig(level=logging.INFO,format="%(levelname)s %(message)s")
-    with LocalServer(("127.0.0.1",args.port),Handler) as server:
-        url=f"http://127.0.0.1:{server.server_port}"
-        print(url,flush=True)
-        if args.open:
+    from launcher import InstanceLock
+    DB.parent.mkdir(parents=True,exist_ok=True)
+    lock=InstanceLock(DB.parent/"instance.lock")
+    if not lock.acquire(): raise SystemExit("Another server instance is running")
+    try:
+        initialize()
+        gateway.recover(DB)
+        load_bundled_calendars()
+        logging.basicConfig(level=logging.INFO,format="%(levelname)s %(message)s")
+        with LocalServer(("127.0.0.1",args.port),Handler) as server:
+            url=f"http://127.0.0.1:{server.server_port}"
+            print(url,flush=True)
+            if args.open:
+                try:
+                    if not webbrowser.open(url):
+                        print("Open the URL manually.",flush=True)
+                except Exception:
+                    logging.exception("Browser launch failed; server remains available")
             try:
-                if not webbrowser.open(url):
-                    print("Open the URL manually.",flush=True)
-            except Exception:
-                logging.exception("Browser launch failed; server remains available")
-        try:
-            with cognitive.worker(DB):
-                server.serve_forever()
-        except KeyboardInterrupt:
-            pass
+                with cognitive.worker(DB):
+                    server.serve_forever()
+            except KeyboardInterrupt:
+                pass
+    finally:
+        lock.close()
 
 if __name__=="__main__":
     main()

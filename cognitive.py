@@ -151,12 +151,15 @@ def worker(path):
     finally: stop.set();thread.join(timeout=6)
 def review(path,data):
     ident,action=data.get("id"),data.get("action")
-    if type(ident) is not int or action not in ("approve","reject"): raise ValueError("Invalid review")
+    if type(ident) is not int or action not in ("approve","reject","reopen"): raise ValueError("Invalid review")
     with closing(connect(path)) as db:
         init(db)
         with db:
             db.execute("BEGIN IMMEDIATE")
             c=db.execute("SELECT * FROM cog_candidates WHERE id=?",(ident,)).fetchone()
+            if action=="reopen":
+                if not c or c["state"]!="rejected": raise ValueError("Candidate not rejected")
+                db.execute("UPDATE cog_candidates SET state='pending' WHERE id=?",(ident,));emit(db,"review","Кандидат возвращён на проверку");return
             if not c or c["state"]!="pending": raise ValueError("Candidate not pending")
             if action=="reject":
                 db.execute("UPDATE cog_candidates SET state='rejected' WHERE id=?",(ident,));emit(db,"review","Кандидат отклонён");return
@@ -232,12 +235,24 @@ def dashboard(path,light=False):
         if light:
             return {"state":st,"revision":revision,"health":{"nodes":db.execute("SELECT COUNT(*) FROM nodes").fetchone()[0],"edges":db.execute("SELECT COUNT(*) FROM edges").fetchone()[0],"pending":db.execute("SELECT COUNT(*) FROM cog_candidates WHERE state='pending'").fetchone()[0]},"skills":[dict(r) for r in db.execute("SELECT * FROM cog_skills ORDER BY name")],"events":[dict(r) for r in db.execute("SELECT * FROM cog_events ORDER BY id DESC LIMIT 30")]}
         candidates=[dict(r) for r in db.execute("SELECT c.*,EXISTS(SELECT 1 FROM cog_memory m WHERE c.subject<>'' AND m.subject=c.subject AND m.fingerprint<>c.fingerprint) conflict FROM cog_candidates c WHERE state='pending' ORDER BY id DESC LIMIT 50")]
+        rejected=[dict(r) for r in db.execute("SELECT id,title FROM cog_candidates WHERE state='rejected' ORDER BY id DESC LIMIT 20")]
         relations=[dict(r) for r in db.execute("SELECT r.*,a.title source_title,b.title target_title FROM cog_relations r JOIN nodes a ON a.id=r.source JOIN nodes b ON b.id=r.target WHERE r.state='suggested' ORDER BY r.source DESC LIMIT 30")]
         counts={r[0]:r[1] for r in db.execute("SELECT kind,COUNT(*) FROM cog_memory GROUP BY kind")}
         health={"foreign_key_issues":sum(1 for _ in db.execute("PRAGMA foreign_key_check")),"pending":db.execute("SELECT COUNT(*) FROM cog_candidates WHERE state='pending'").fetchone()[0],"nodes":db.execute("SELECT COUNT(*) FROM nodes").fetchone()[0],"edges":db.execute("SELECT COUNT(*) FROM edges").fetchone()[0]}
-        return {"state":st,"revision":revision,"persona":PERSONA,"counts":counts,"health":health,"candidates":candidates,"relations":relations,"skills":[dict(r) for r in db.execute("SELECT * FROM cog_skills ORDER BY name")],"goals":[dict(r) for r in db.execute("SELECT * FROM cog_goals ORDER BY id LIMIT 20")],"events":[dict(r) for r in db.execute("SELECT * FROM cog_events ORDER BY id DESC LIMIT 30")]}
+        return {"state":st,"revision":revision,"persona":PERSONA,"counts":counts,"health":health,"candidates":candidates,"rejected":rejected,"relations":relations,"skills":[dict(r) for r in db.execute("SELECT * FROM cog_skills ORDER BY name")],"goals":[dict(r) for r in db.execute("SELECT * FROM cog_goals ORDER BY id LIMIT 20")],"events":[dict(r) for r in db.execute("SELECT * FROM cog_events ORDER BY id DESC LIMIT 30")]}
 def system_profile(path,prompt):
     # Only fixed persona and approved style, never local memories or user preferences.
     with closing(connect(path)) as db:
         init(db);style=db.execute("SELECT style FROM cog_state WHERE id=1").fetchone()[0]
     return " You portray Amatsumireika, a fictional celestial kitsune empress. Be accurate, respectful, and clear about limitations. Do not claim consciousness. Speech style: "+style+". User request category: "+intent(prompt)+"."
+
+def adaptive_plan(path,text,db=None):
+    result=plan(text)
+    def enrich(conn):
+        if memory.table(conn,"cog_skills"):
+            failures=conn.execute("SELECT COALESCE(SUM(failures),0) FROM cog_skills").fetchone()[0]
+            if failures and result["intent"] in ("repair","search"):
+                result["steps"].insert(0,"Проверить прошлые неудачные операции и не повторять их без проверки")
+        return result
+    if db is not None:return enrich(db)
+    with closing(connect(path)) as conn:return enrich(conn)
